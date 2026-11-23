@@ -8,6 +8,7 @@ from __future__ import annotations
 import argparse
 import json
 import re
+import sys
 from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any
@@ -274,24 +275,44 @@ def check_electrical_rules(raw: dict[str, Any]) -> ERCReport:
     return check_model(validate_model(raw))
 
 
+def run(netlist: str | Path, *, as_json: bool = False,
+        fail_on_warning: bool = False) -> int:
+    """Check one netlist and return a process exit code.
+
+    ``netlist`` is a path, or ``-`` to read standard input. Exit codes: 0 clean,
+    1 issues found (or warnings with ``fail_on_warning``), 2 the input could not
+    be read, 1 for a netlist that is not usable.
+    """
+    label = "standard input" if str(netlist) == "-" else str(netlist)
+    try:
+        text = sys.stdin.read() if str(netlist) == "-" else Path(netlist).read_text(encoding="utf-8")
+    except OSError as error:
+        _report_unusable(f"cannot read {label}: {error.strerror or error}", as_json)
+        return 2
+    try:
+        report = check_electrical_rules(json.loads(text))
+    except (ValueError, CircuitError) as error:
+        _report_unusable(str(error), as_json)
+        return 1
+    print(json.dumps(report.as_dict(), indent=2) if as_json else report.format_text())
+    return 1 if report.errors or (fail_on_warning and report.warnings) else 0
+
+
+def _report_unusable(reason: str, as_json: bool) -> None:
+    if as_json:
+        print(json.dumps({"ok": False, "validation_error": reason}, indent=2))
+    else:
+        print(f"Invalid netlist: {reason}")
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description="Check a CircuitGen netlist for electrical rule issues")
-    parser.add_argument("netlist", type=Path)
+    parser.add_argument("netlist", type=Path, help="netlist JSON file, or - for standard input")
     parser.add_argument("--json", action="store_true", help="Print a structured JSON report")
     parser.add_argument("--fail-on-warning", action="store_true",
                         help="Return a nonzero exit code when warnings are present")
     args = parser.parse_args()
-    try:
-        raw = json.loads(args.netlist.read_text(encoding="utf-8"))
-        report = check_electrical_rules(raw)
-    except (OSError, ValueError, CircuitError) as error:
-        if args.json:
-            print(json.dumps({"ok": False, "validation_error": str(error)}, indent=2))
-        else:
-            print(f"Invalid netlist: {error}")
-        return 2
-    print(json.dumps(report.as_dict(), indent=2) if args.json else report.format_text())
-    return 1 if report.errors or (args.fail_on_warning and report.warnings) else 0
+    return run(args.netlist, as_json=args.json, fail_on_warning=args.fail_on_warning)
 
 
 if __name__ == "__main__":

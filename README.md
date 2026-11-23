@@ -32,13 +32,31 @@ Requires Python 3.10 or higher.
 
 ## Running CircuitGen
 
-You can launch the interactive terminal interface using either:
+`circuitgen` with no arguments opens the interactive terminal app. For netlists, drawings, and checks — from a shell, a script, or CI — use one of the commands:
+
+| Command | What it does |
+| --- | --- |
+| `circuitgen render NETLIST` | Draw a netlist as an SVG schematic |
+| `circuitgen validate NETLIST` | Check structure and connectivity without drawing |
+| `circuitgen erc NETLIST` | Run electrical rule checks |
+| `circuitgen symbols [KIND]` | List built-in symbols, or draw one as an SVG |
 
 ```bash
-circuitgen
+circuitgen render examples/wheatstone.json -o wheatstone.svg
+circuitgen render - < netlist.json > schematic.svg
+circuitgen render examples/wheatstone.json --color '#336699' --optimize
+circuitgen validate examples/controller.json --json
+circuitgen erc examples/erc_issues.json --fail-on-warning
+circuitgen symbols ne555 --rotation 90 -o ne555.svg
 ```
 
-Or using the universal cross-platform Python module entrypoint:
+`NETLIST` is a file path or `-` for standard input. Results go to stdout unless `-o` is given, and the summary goes to stderr, so redirection stays clean. Exit codes are `0` for success, `1` when the netlist was read but is not a usable circuit, and `2` for wrong arguments or an unreadable input:
+
+```bash
+circuitgen validate netlist.json && circuitgen render netlist.json -o out.svg
+```
+
+The app can also be launched through the universal cross-platform Python module entrypoint:
 
 ```bash
 python -m circuitgen
@@ -200,10 +218,17 @@ You can define custom ICs or breakout boards by providing an explicit `pins` lis
 Run conservative electrical checks (floating pins, polarity issues) on a netlist:
 
 ```bash
-python -m circuitgen.erc path/to/netlist.json
+circuitgen erc path/to/netlist.json
 ```
 
-Or output JSON:
+Or output JSON, and fail the shell command when anything is wrong:
+
+```bash
+circuitgen erc path/to/netlist.json --json
+circuitgen erc path/to/netlist.json --fail-on-warning
+```
+
+The standalone module entrypoint works too:
 
 ```bash
 python -m circuitgen.erc path/to/netlist.json --json
@@ -214,6 +239,7 @@ python -m circuitgen.erc path/to/netlist.json --json
 - CircuitGen is a schematic renderer, not a circuit simulator (like SPICE) or PCB layout tool (like KiCad).
 - Wire routing is orthogonal (Manhattan) and deterministic.
 - Manual netlist workflows are 100% offline and do not require network access or API keys.
+- `circuitgen validate` checks structure and connectivity only; `circuitgen render` additionally proves that the drawing it emits is geometrically consistent.
 
 ## License
 

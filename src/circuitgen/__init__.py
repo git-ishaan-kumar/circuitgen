@@ -15,7 +15,7 @@ from .api import (
     render,
     validate,
 )
-from .engine import CircuitError, CircuitModel
+from .engine import CircuitError, CircuitModel, LayoutUnavailable
 
 __all__ = [
     "CircuitResult",
@@ -28,4 +28,5 @@ __all__ = [
     "validate",
     "CircuitError",
     "CircuitModel",
+    "LayoutUnavailable",
 ]

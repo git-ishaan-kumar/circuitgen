@@ -197,3 +197,91 @@ class TestGeneralModel(unittest.TestCase):
                'nets':[{'name':'N1','pins':['R1.a']},{'name':'N2','pins':['R1.a']}]}
         with self.assertRaisesRegex(CircuitError, 'assigned more than once'):
             validate_model(raw)
+
+
+class TestLegibleLayoutFallback(unittest.TestCase):
+    """Valid netlists outside the series/parallel layout must still be drawn."""
+
+    def test_series_chain_larger_than_layout_limit_is_routed(self):
+        parts = [("V1", "battery", "9V")] + [(f"R{i}", "resistor", "1kΩ") for i in range(1, 25)]
+        nets = [[f"R{i}.b", f"R{i + 1}.a"] for i in range(1, 24)]
+        nets.insert(0, ["V1.p", "R1.a"])
+        nets.append([f"R24.b", "V1.n"])
+        raw = netlist(parts, nets)
+        artwork = make_svg_from_netlist(raw)
+        self.assertIn("CircuitGen routed schematic", artwork)
+        self.assertEqual(artwork.count('data-component="'), 25)
+
+    def test_long_component_id_is_drawn(self):
+        raw = netlist(
+            [("V1", "battery", "9V"), ("RESISTOR_LOAD_1", "resistor", "1kΩ")],
+            [["V1.p", "RESISTOR_LOAD_1.a"], ["RESISTOR_LOAD_1.b", "V1.n"]],
+        )
+        self.assertIn("CircuitGen routed schematic", make_svg_from_netlist(raw))
+
+    def test_long_net_name_is_drawn(self):
+        raw = {"components": [{"id": "V1", "type": "battery", "value": "9V"},
+                              {"id": "R1", "type": "resistor", "value": "1kΩ"}],
+               "nets": [{"name": "RAIL_POSITIVE_5V", "pins": ["V1.p", "R1.a"]},
+                        {"name": "RETURN", "pins": ["R1.b", "V1.n"]}]}
+        self.assertIn("CircuitGen routed schematic", make_svg_from_netlist(raw))
+
+    def test_long_value_is_drawn(self):
+        raw = netlist(
+            [("V1", "battery", "9V"),
+             ("R1", "resistor", "10k ohm 1% 250mW metal film axial")],
+            [["V1.p", "R1.a"], ["R1.b", "V1.n"]],
+        )
+        artwork = make_svg_from_netlist(raw)
+        self.assertIn("CircuitGen routed schematic", artwork)
+        self.assertIn("10k ohm 1% 250mW metal film axial", artwork)
+
+    def test_separate_blocks_are_drawn(self):
+        raw = netlist(
+            [("V1", "battery", "9V"), ("R1", "resistor", "1kΩ"),
+             ("R2", "resistor", "1kΩ"), ("R3", "resistor", "2kΩ")],
+            [["V1.p", "R1.a"], ["R1.b", "V1.n"], ["R2.a", "R3.a"], ["R2.b", "R3.b"]],
+        )
+        artwork = make_svg_from_netlist(raw)
+        self.assertIn("CircuitGen routed schematic", artwork)
+        self.assertEqual(artwork.count('data-component="'), 4)
+
+    def test_single_pin_net_is_drawn(self):
+        raw = netlist(
+            [("V1", "battery", "9V"), ("R1", "resistor", "1kΩ"),
+             ("SW1", "switch", "SPST")],
+            [["V1.p", "R1.a"], ["R1.b", "V1.n"], ["SW1.a"], ["SW1.b"]],
+        )
+        artwork = make_svg_from_netlist(raw)
+        self.assertIn("CircuitGen routed schematic", artwork)
+        self.assertEqual(artwork.count('data-component="'), 3)
+
+    def test_bypassed_component_is_drawn(self):
+        raw = netlist(
+            [("V1", "battery", "9V"), ("R1", "resistor", "1kΩ"), ("R2", "resistor", "2kΩ")],
+            [["V1.p", "R1.a", "R2.a"], ["R1.b", "V1.n"], ["R2.b"]],
+        )
+        self.assertIn("CircuitGen routed schematic", make_svg_from_netlist(raw))
+
+    def test_validate_reports_layout_limit_as_its_own_error(self):
+        from circuitgen.engine import LayoutUnavailable, validate
+        raw = netlist([("V1", "battery", "9V"), ("R1", "resistor", "1kΩ")],
+                      [["V1.p", "R1.a"], ["R1.b", "V1.n"]])
+        self.assertEqual(validate(raw).source, "V1")
+        too_big = netlist(
+            [("V1", "battery", "9V")] + [(f"R{i}", "resistor", "1kΩ") for i in range(1, 25)],
+            [[f"R{i}.b", f"R{i + 1}.a"] for i in range(1, 24)]
+            + [["V1.p", "R1.a"], ["R24.b", "V1.n"]],
+        )
+        with self.assertRaises(LayoutUnavailable) as caught:
+            validate(too_big)
+        self.assertIsInstance(caught.exception, CircuitError)
+        self.assertIn("25", str(caught.exception))
+
+    def test_structurally_invalid_netlist_is_not_a_layout_issue(self):
+        from circuitgen.engine import LayoutUnavailable
+        raw = netlist([("V1", "battery", "9V"), ("R1", "resistor", "1kΩ")],
+                      [["V1.p", "R1.x"], ["R1.b", "V1.n"]])
+        with self.assertRaises(CircuitError) as caught:
+            make_svg_from_netlist(raw)
+        self.assertNotIsInstance(caught.exception, LayoutUnavailable)

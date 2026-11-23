@@ -34,9 +34,18 @@ class TestCLIEntrypoint(unittest.TestCase):
 
     @patch.object(CircuitGenApp, "run")
     def test_main_no_args_launches_tui(self, mock_run):
-        exit_code = main([])
+        with patch("sys.stdin.isatty", return_value=True):
+            exit_code = main([])
         self.assertEqual(exit_code, 0)
         mock_run.assert_called_once()
+
+    @patch.object(CircuitGenApp, "run")
+    def test_main_no_args_without_a_terminal_does_not_launch_tui(self, mock_run):
+        with patch("sys.stdin.isatty", return_value=False), patch("sys.stderr") as stderr:
+            exit_code = main([])
+        self.assertEqual(exit_code, 2)
+        mock_run.assert_not_called()
+        self.assertIn("needs a terminal", stderr.write.call_args[0][0])
 
     def test_app_instantiation(self):
         app = CircuitGenApp()

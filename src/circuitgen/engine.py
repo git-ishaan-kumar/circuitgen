@@ -136,6 +136,15 @@ class CircuitError(Exception):
     """Reject invalid/unrenderable circuits rather than inventing connections."""
 
 
+class LayoutUnavailable(CircuitError):
+    """The netlist is valid, but the legible series/parallel layout cannot draw it.
+
+    This is a drawing limitation, not a netlist defect: the general router draws
+    these netlists. Callers that want a schematic should treat it as "use the
+    routed renderer" rather than as a rejection.
+    """
+
+
 @dataclasses.dataclass(frozen=True)
 class Component:
     cid: str
@@ -202,6 +211,14 @@ class Ink:
 
 
 def validate(raw: dict[str, Any]) -> Circuit:
+    """Validate a netlist for the legible series/parallel layout.
+
+    Raises :class:`CircuitError` when the netlist is electrically invalid, and
+    :class:`LayoutUnavailable` when it is valid but outside this layout's
+    drawing limits (size, label length, one source, single connected block).
+    The general router renders those netlists, so callers should prefer
+    :func:`make_svg_from_netlist` over calling this directly.
+    """
     if not isinstance(raw, dict):
         raise CircuitError("Netlist must be a JSON object")
     if set(raw) != {"components", "nets"}:
@@ -210,9 +227,13 @@ def validate(raw: dict[str, Any]) -> Circuit:
     if not isinstance(rows, list) or not isinstance(net_rows, list):
         raise CircuitError("components and nets must both be arrays")
     if not 2 <= len(rows) <= MAX_COMPONENTS:
-        raise CircuitError(f"Expected 2–{MAX_COMPONENTS} supported components")
+        raise LayoutUnavailable(
+            f"The legible series/parallel layout draws 2–{MAX_COMPONENTS} components; "
+            f"this netlist has {len(rows)}")
     if not 2 <= len(net_rows) <= MAX_NETS:
-        raise CircuitError(f"Expected 2–{MAX_NETS} electrical nets")
+        raise LayoutUnavailable(
+            f"The legible series/parallel layout draws 2–{MAX_NETS} nets; "
+            f"this netlist has {len(net_rows)}")
 
     definitions: dict[str, tuple[str, str]] = {}
     for row in rows:
@@ -220,18 +241,22 @@ def validate(raw: dict[str, Any]) -> Circuit:
             raise CircuitError("Each component requires id, type, and value")
         cid, kind, value = row["id"], row["type"], row["value"]
         if not isinstance(cid, str) or not re.fullmatch(r"[A-Za-z][A-Za-z0-9_]{0,11}", cid):
-            raise CircuitError(f"Invalid component ID: {cid!r}")
+            raise LayoutUnavailable(f"Invalid component ID for a legible layout: {cid!r}")
         if cid in definitions:
             raise CircuitError(f"Duplicate component ID: {cid}")
         if not isinstance(kind, str) or kind not in VALID_TYPES:
-            raise CircuitError(f"Unsupported component type {kind!r} ({cid})")
+            raise LayoutUnavailable(
+                f"Unsupported component type {kind!r} ({cid}); the legible layout draws "
+                "series/parallel two-terminal circuits")
         if not isinstance(value, str) or len(value) > 28 or any(ord(c) < 32 for c in value):
-            raise CircuitError(f"Invalid/overlong value for {cid}")
+            raise LayoutUnavailable(f"Invalid/legible-length value for {cid}")
         definitions[cid] = (kind, value)
 
     sources = [cid for cid, (kind, _) in definitions.items() if kind in SOURCE_TYPES]
     if len(sources) != 1:
-        raise CircuitError("This version requires exactly ONE battery/DC voltage source")
+        raise LayoutUnavailable(
+            "The legible series/parallel layout requires exactly one battery/DC "
+            "voltage source")
 
     nets: dict[str, tuple[str, ...]] = {}
     pin_to_net: dict[str, str] = {}
@@ -240,11 +265,13 @@ def validate(raw: dict[str, Any]) -> Circuit:
             raise CircuitError("Each net requires name and pins")
         name, pins = row["name"], row["pins"]
         if not isinstance(name, str) or not re.fullmatch(r"[A-Za-z][A-Za-z0-9_]{0,11}", name):
-            raise CircuitError(f"Invalid net name: {name!r}")
+            raise LayoutUnavailable(f"Invalid net name for a legible layout: {name!r}")
         if name in nets:
             raise CircuitError(f"Duplicate net: {name}")
         if not isinstance(pins, list) or len(pins) < 2:
-            raise CircuitError(f"Net {name} is dangling (fewer than 2 pins)")
+            raise LayoutUnavailable(
+                f"Net {name} is dangling (fewer than 2 pins); the legible layout "
+                "cannot draw a net with one terminal")
         if any(not isinstance(pin, str) for pin in pins):
             raise CircuitError(f"Net {name} contains a non-string terminal reference")
         if len(pins) != len(set(pins)):
@@ -269,10 +296,14 @@ def validate(raw: dict[str, Any]) -> Circuit:
         names = ("p", "n") if kind in SOURCE_TYPES else ("a", "b")
         for terminal in names:
             if f"{cid}.{terminal}" not in pin_to_net:
-                raise CircuitError(f"Disconnected terminal: {cid}.{terminal}")
+                raise LayoutUnavailable(
+                    f"Disconnected terminal: {cid}.{terminal}; the legible layout "
+                    "draws fully connected two-terminal parts")
         p = {t: pin_to_net[f"{cid}.{t}"] for t in names}
         if p[names[0]] == p[names[1]]:
-            raise CircuitError(f"{cid} has both pins on the same net (shorted/bypassed)")
+            raise LayoutUnavailable(
+                f"{cid} has both pins on the same net (shorted/bypassed); "
+                "the legible layout cannot draw a bypassed part")
         components[cid] = Component(cid, kind, value, p)
 
     adj: dict[str, set[str]] = {name: set() for name in nets}
@@ -289,7 +320,9 @@ def validate(raw: dict[str, Any]) -> Circuit:
                 stack.append(nxt)
                 visited.add(nxt)
     if len(visited) != len(adj):
-        raise CircuitError("Circuit contains an electrically disconnected subcircuit")
+        raise LayoutUnavailable(
+            "Circuit contains an electrically disconnected subcircuit; "
+            "the legible layout draws one connected block")
     return Circuit(components, nets, sources[0])
 
 
@@ -325,7 +358,7 @@ def expression(circuit: Circuit) -> Network:
              for c in circuit.components.values() if c.cid != circuit.source]
 
     if not edges:
-        raise CircuitError("No load components to render")
+        raise LayoutUnavailable("No load components for the legible layout to render")
     for _ in range(4 * len(edges) + 10):
         buckets: dict[tuple[str, str], list[Network]] = collections.defaultdict(list)
         for e in edges:
@@ -373,8 +406,8 @@ def expression(circuit: Circuit) -> Network:
             break
 
     if len(edges) != 1 or {edges[0].u, edges[0].v} != {positive, negative}:
-        raise CircuitError(
-            "Unsupported topology: this draft can draw series/parallel "
+        raise LayoutUnavailable(
+            "Unsupported topology: the legible layout draws series/parallel "
             "two-terminal networks, but not bridge or arbitrary feedback circuits"
         )
     return orient(edges[0], positive, negative)
@@ -457,7 +490,7 @@ def layout(circuit: Circuit) -> Ink:
     return_y = max(11, body.down + 8)
     source_y = return_y // 2
     if source_y <= SOURCE_SYMBOL_HALF_HEIGHT + 1:
-        raise CircuitError("Internal error: source placement conflict")
+        raise LayoutUnavailable("Legible layout has no room for the source symbol")
     ink.placed[source.cid] = Placed(
         source.cid, source_x, source_y, "down",
         {"p": (source_x, source_y - SOURCE_SYMBOL_HALF_HEIGHT),
@@ -688,20 +721,35 @@ def svg(circuit: Circuit, ink: Ink) -> str:
 
 # API
 
+def legible_candidate(model: CircuitModel) -> bool:
+    """True when the series/parallel layout is worth attempting for this model."""
+    components = model.components.values()
+    return (all(c.kind in VALID_TYPES for c in components)
+            and all(len(c.pins) == 2 for c in components)
+            and sum(c.kind in SOURCE_TYPES for c in components) == 1)
+
+
 def make_svg_from_netlist(raw: dict[str, Any], *, optimize: bool = False, color: str = "#000000") -> str:
+    """Render a netlist, preferring the legible series/parallel layout.
+
+    The series/parallel layout gives the tidiest artwork but draws only a subset
+    of what the router understands. When the netlist is structurally valid but
+    outside that subset (more than 24 parts, long labels, dangling nets, separate
+    blocks, bridge/feedback topology) the general router draws it instead of the
+    netlist being rejected.
+    """
     from .colors import apply_ink_color
     model = validate_model(raw)
-    if (all(c.kind in VALID_TYPES for c in model.components.values()) and
-            all(len(c.pins) == 2 for c in model.components.values()) and
-            sum(c.kind in SOURCE_TYPES for c in model.components.values()) == 1):
+    if legible_candidate(model):
         try:
             circuit = validate(raw)
             ink = layout(circuit)
+        except LayoutUnavailable:
+            pass
+        else:
             return apply_ink_color(svg(circuit, ink), color)
-        except CircuitError as error:
-            if "Unsupported topology" not in str(error):
-                raise
-    return make_routed_svg_from_netlist(raw, optimize=optimize, color=color)
+    from .routing import make_routed_svg
+    return make_routed_svg(model, optimize=optimize, color=color)
 
 
 def route_netlist(raw: dict[str, Any], *, optimize: bool = False):
