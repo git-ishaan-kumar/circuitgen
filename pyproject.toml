@@ -48,3 +48,7 @@ Homepage = "https://github.com/git-ishaan-kumar/circuitgen"
 
 [tool.setuptools.packages.find]
 where = ["src"]
+
+[tool.setuptools.package-data]
+"circuitgen.tui" = ["*.tcss"]
+
