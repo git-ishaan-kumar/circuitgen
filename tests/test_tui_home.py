@@ -11,7 +11,19 @@ from circuitgen.tui.app import CircuitGenApp
 from circuitgen.tui.screens.confirm_dialog import QuitModal
 from circuitgen.tui.screens.home import HomeScreen
 from circuitgen.tui.screens.placeholder import PlaceholderScreen
+from circuitgen.tui.services.config import AppConfig, ConfigService
 from circuitgen.tui.widgets.selectable_menu import SelectableMenu
+import pytest
+
+
+@pytest.fixture(autouse=True)
+def bypass_onboarding_for_home_tests():
+    """Ensure HomeScreen is mounted directly during home screen tests."""
+    ConfigService.reset_cache()
+    with patch.object(ConfigService, "load", return_value=AppConfig(onboarding_status="completed")):
+        yield
+    ConfigService.reset_cache()
+
 
 
 def test_home_screen_renders_menu_and_offline_status():

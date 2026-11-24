@@ -197,3 +197,36 @@ QuitModal {
     color: #4ADE80;
     text-style: bold;
 }
+
+/* First-Run Setup Screens (§3) */
+.breadcrumb-row {
+    height: 1;
+    width: 100%;
+    margin-bottom: 0;
+}
+
+.breadcrumb-left {
+    color: #4ADE80;
+    text-style: bold;
+    dock: left;
+    width: auto;
+}
+
+.breadcrumb-right {
+    color: #9CA3AF;
+    dock: right;
+    width: auto;
+}
+
+.setup-title {
+    color: #E5E7EB;
+    text-style: bold;
+    margin-top: 1;
+    margin-bottom: 0;
+}
+
+.setup-tagline {
+    color: #9CA3AF;
+    margin-top: 0;
+    margin-bottom: 1;
+}

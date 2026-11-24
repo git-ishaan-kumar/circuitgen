@@ -26,17 +26,30 @@ MENU_ITEMS = [
 
 def get_ai_status() -> tuple[str, str, bool]:
     """Return (left_status, right_status, is_configured) based on environment / configuration."""
-    gemini_key = os.environ.get("GEMINI_API_KEY", "").strip()
-    if gemini_key:
-        return "AI: Gemini · Automatic", "Key: Environment", True
+    from circuitgen.ai import PROVIDERS
+    from circuitgen.tui.services.config import ConfigService
+    from circuitgen.tui.screens.setup_provider import PROVIDER_DISPLAY_NAMES
 
-    openai_key = os.environ.get("OPENAI_API_KEY", "").strip()
-    if openai_key:
-        return "AI: OpenAI · Automatic", "Key: Environment", True
+    try:
+        config = ConfigService.load()
+        provider_id = config.default_provider
+    except Exception:
+        provider_id = "gemini"
 
-    anthropic_key = os.environ.get("ANTHROPIC_API_KEY", "").strip()
-    if anthropic_key:
-        return "AI: Anthropic · Automatic", "Key: Environment", True
+    provider_info = PROVIDERS.get(provider_id, PROVIDERS.get("gemini", {}))
+    env_key_name = provider_info.get("key", "GEMINI_API_KEY")
+    display_name = PROVIDER_DISPLAY_NAMES.get(provider_id, provider_id.title()).replace("Google ", "")
+
+    key_val = os.environ.get(env_key_name, "").strip()
+    if key_val:
+        return f"AI: {display_name} · Automatic", "Key: Environment", True
+
+    # Fallback: check if any provider key is present in environment
+    for p_id, p_info in PROVIDERS.items():
+        k = os.environ.get(p_info.get("key", ""), "").strip()
+        if k:
+            d_name = PROVIDER_DISPLAY_NAMES.get(p_id, p_id.title()).replace("Google ", "")
+            return f"AI: {d_name} · Automatic", "Key: Environment", True
 
     return "AI: Not configured", "", False
 
