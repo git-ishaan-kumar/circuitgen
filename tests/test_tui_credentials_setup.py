@@ -259,9 +259,9 @@ class TestSetupKeyScreenInteraction:
                 # Secret was cleared from input widget memory
                 assert key_input.value == ""
 
-                # Advanced to Step 4
-                assert isinstance(app.screen, SetupStepPlaceholderScreen)
-                assert app.screen.step == 4
+                # Advanced to Step 4 (SetupModelScreen)
+                from circuitgen.tui.screens.setup_model import SetupModelScreen
+                assert isinstance(app.screen, SetupModelScreen)
 
         asyncio.run(_run())
 
@@ -332,8 +332,9 @@ class TestSetupKeyScreenInteraction:
                     # Input cleared
                     assert key_input.value == ""
 
-                    # Advanced to Step 4
-                    assert isinstance(app.screen, SetupStepPlaceholderScreen)
+                    # Advanced to Step 4 (SetupModelScreen)
+                    from circuitgen.tui.screens.setup_model import SetupModelScreen
+                    assert isinstance(app.screen, SetupModelScreen)
 
         asyncio.run(_run())
 

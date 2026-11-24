@@ -30,6 +30,7 @@ Footer {
     height: 100%;
     align: center top;
     padding-top: 1;
+    overflow-y: auto;
 }
 
 #home-card {
@@ -262,4 +263,32 @@ QuitModal {
     color: #6B7280;
     margin-top: 1;
     margin-bottom: 1;
+}
+
+/* Setup Complete Summary (§3.5) */
+.summary-card {
+    height: auto;
+    width: 100%;
+    margin-top: 1;
+    margin-bottom: 1;
+    background: #161B22;
+    border: solid #30363D;
+    padding: 1 2;
+}
+
+.summary-row {
+    height: 1;
+    width: 100%;
+    margin-bottom: 0;
+}
+
+.summary-label {
+    width: 16;
+    color: #9CA3AF;
+    text-style: bold;
+}
+
+.summary-value {
+    color: #4ADE80;
+    text-style: bold;
 }

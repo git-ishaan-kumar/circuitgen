@@ -63,12 +63,12 @@ class SetupProviderScreen(Screen[None]):
                 yield Static("Choose your AI provider", classes="setup-title")
                 yield Static("You can change this later in Settings.", classes="setup-tagline")
 
-                yield SelectableMenu(menu_items, initial_index=initial_index, id="provider-menu")
+                yield SelectableMenu(menu_items, initial_index=initial_index, max_visible=10, id="provider-menu")
 
                 yield Static("─" * 62, classes="rule")
 
                 yield Static(
-                    "↑↓ Navigate  ·  Enter Select  ·  Esc Back  ·  Ctrl+Q Quit",
+                    "↑↓ / PgUp/PgDn Navigate  ·  Enter Select  ·  Esc Back  ·  Ctrl+Q Quit",
                     classes="keys-reminder",
                 )
 

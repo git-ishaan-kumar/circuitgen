@@ -9,7 +9,7 @@ from textual.widgets import Header, Input, Static
 
 from circuitgen.ai import PROVIDER_DISPLAY_NAMES
 from circuitgen.tui.screens.home import HomeScreen
-from circuitgen.tui.screens.setup_step_placeholder import SetupStepPlaceholderScreen
+from circuitgen.tui.screens.setup_model import SetupModelScreen
 from circuitgen.tui.services.config import ConfigService
 from circuitgen.tui.services.credentials import CredentialService, InsecureBackendError
 from circuitgen.tui.widgets.selectable_menu import MenuItem, SelectableMenu
@@ -135,7 +135,7 @@ class SetupKeyScreen(Screen[None]):
                     self.set_status(f"! Failed to save key: {exc}")
                     return
                 self.clear_secret()
-                self.app.push_screen(SetupStepPlaceholderScreen(step=4, provider_id=self.provider_id))
+                self.app.push_screen(SetupModelScreen(provider_id=self.provider_id))
             else:
                 self.set_status(res.message)
 
@@ -155,7 +155,7 @@ class SetupKeyScreen(Screen[None]):
                 return
 
             self.clear_secret()
-            self.app.push_screen(SetupStepPlaceholderScreen(step=4, provider_id=self.provider_id))
+            self.app.push_screen(SetupModelScreen(provider_id=self.provider_id))
 
         elif action_key == "how_to_get":
             url = CredentialService.get_provider_url(self.provider_id)

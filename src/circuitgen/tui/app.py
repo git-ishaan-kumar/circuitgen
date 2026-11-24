@@ -10,6 +10,12 @@ from circuitgen import __version__
 from .screens.confirm_dialog import QuitModal
 from .screens.home import HomeScreen
 from .screens.setup_key import SetupKeyScreen
+from .screens.setup_model import (
+    SetupModelBrowseScreen,
+    SetupModelManualScreen,
+    SetupModelScreen,
+)
+from .screens.setup_complete import SetupCompleteScreen
 from .screens.setup_provider import SetupProviderScreen
 from .screens.setup_step_placeholder import SetupStepPlaceholderScreen
 from .screens.setup_welcome import SetupWelcomeScreen
@@ -46,6 +52,10 @@ class CircuitGenApp(App[None]):
                 SetupWelcomeScreen,
                 SetupProviderScreen,
                 SetupKeyScreen,
+                SetupModelScreen,
+                SetupModelBrowseScreen,
+                SetupModelManualScreen,
+                SetupCompleteScreen,
                 SetupStepPlaceholderScreen,
             ),
         ):
