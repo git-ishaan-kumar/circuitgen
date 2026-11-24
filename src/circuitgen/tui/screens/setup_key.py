@@ -12,6 +12,7 @@ from circuitgen.tui.screens.home import HomeScreen
 from circuitgen.tui.screens.setup_model import SetupModelScreen
 from circuitgen.tui.services.config import ConfigService
 from circuitgen.tui.services.credentials import CredentialService, InsecureBackendError
+from circuitgen.tui.widgets.enhanced_input import EnhancedInput
 from circuitgen.tui.widgets.selectable_menu import MenuItem, SelectableMenu
 
 
@@ -45,7 +46,7 @@ class SetupKeyScreen(Screen[None]):
                 # Title & input
                 yield Static(f"Connect {provider_name}", classes="setup-title")
                 yield Static("API key", classes="input-field-label")
-                yield Input(
+                yield EnhancedInput(
                     placeholder="Paste your API key here",
                     password=True,
                     id="key-input",

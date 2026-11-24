@@ -20,6 +20,7 @@ from .screens.setup_provider import SetupProviderScreen
 from .screens.setup_step_placeholder import SetupStepPlaceholderScreen
 from .screens.setup_welcome import SetupWelcomeScreen
 from .services.config import ConfigService
+from .clipboard import get_system_clipboard, set_system_clipboard
 
 
 class CircuitGenApp(App[None]):
@@ -34,6 +35,19 @@ class CircuitGenApp(App[None]):
         Binding("ctrl+q", "request_quit", "Quit", show=True, priority=True),
         Binding("q", "request_quit", "Quit", show=False),
     ]
+
+    @property
+    def clipboard(self) -> str:
+        """The value of the host system clipboard, falling back to local clipboard."""
+        sys_clip = get_system_clipboard()
+        if sys_clip:
+            return sys_clip
+        return self._clipboard
+
+    def copy_to_clipboard(self, text: str) -> None:
+        """Copy text to host system clipboard, app clipboard, and OSC 52 terminal clipboard."""
+        set_system_clipboard(text)
+        super().copy_to_clipboard(text)
 
     def on_mount(self) -> None:
         config = ConfigService.load()

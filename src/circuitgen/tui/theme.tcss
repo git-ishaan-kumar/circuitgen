@@ -150,14 +150,22 @@ SelectableMenu {
     margin-top: 1;
 }
 
-/* Modal Dialog */
-QuitModal {
+/* Modal Dialogs */
+QuitModal, OverwriteModal, CreateDirectoryModal, PathPickerModal {
     align: center middle;
 }
 
-#quit-dialog {
-    width: 60;
+#quit-dialog, #overwrite-dialog, #create-dir-dialog {
+    width: 62;
     height: auto;
+    background: #161B22;
+    border: solid #30363D;
+    padding: 1 2;
+}
+
+#path-picker-dialog {
+    width: 76;
+    height: 22;
     background: #161B22;
     border: solid #30363D;
     padding: 1 2;
@@ -172,6 +180,18 @@ QuitModal {
 .modal-warning {
     color: #9CA3AF;
     margin-bottom: 1;
+}
+
+/* JsonEditor and TextArea */
+JsonEditor, TextArea {
+    background: #0D1117;
+    border: solid #30363D;
+    color: #E5E7EB;
+    height: 12;
+}
+
+JsonEditor:focus, TextArea:focus {
+    border: solid #4ADE80;
 }
 
 /* Placeholder Screens */

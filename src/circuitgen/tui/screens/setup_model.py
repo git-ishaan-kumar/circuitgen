@@ -11,6 +11,7 @@ from circuitgen.ai import PROVIDER_DISPLAY_NAMES
 from circuitgen.tui.screens.setup_complete import SetupCompleteScreen
 from circuitgen.tui.services.config import ConfigService
 from circuitgen.tui.services.models import ModelService, ProviderError
+from circuitgen.tui.widgets.enhanced_input import EnhancedInput
 from circuitgen.tui.widgets.selectable_menu import MenuItem, SelectableMenu
 
 
@@ -99,7 +100,7 @@ class SetupModelManualScreen(Screen[None]):
                 yield Static(f"Enter {provider_name} Model ID", classes="setup-title")
                 yield Static("Specify a provider model ID (e.g. gpt-4o, claude-3-5-sonnet-20241022):", classes="setup-tagline")
 
-                yield Input(placeholder="Enter custom model ID", id="manual-model-input")
+                yield EnhancedInput(placeholder="Enter custom model ID", id="manual-model-input")
                 yield Static("", id="manual-model-status", classes="status-message")
 
                 yield SelectableMenu(
