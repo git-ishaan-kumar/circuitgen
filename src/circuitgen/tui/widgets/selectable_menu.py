@@ -52,6 +52,15 @@ class SelectableMenu(Widget, can_focus=True):
         self.cursor_index = max(0, min(initial_index, len(self.items) - 1)) if self.items else 0
 
     @property
+    def selected_index(self) -> int:
+        return self.cursor_index
+
+    @selected_index.setter
+    def selected_index(self, val: int) -> None:
+        self.cursor_index = max(0, min(val, len(self.items) - 1)) if self.items else 0
+        self.refresh()
+
+    @property
     def selected_item(self) -> MenuItem | None:
         if 0 <= self.cursor_index < len(self.items):
             return self.items[self.cursor_index]

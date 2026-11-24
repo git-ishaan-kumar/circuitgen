@@ -230,3 +230,36 @@ QuitModal {
     margin-top: 0;
     margin-bottom: 1;
 }
+
+/* API Key Input Screen (§3.3) */
+.input-field-label {
+    color: #E5E7EB;
+    margin-top: 1;
+    margin-bottom: 0;
+    text-style: bold;
+}
+
+#key-input {
+    width: 100%;
+    margin-top: 0;
+    margin-bottom: 1;
+    background: #161B22;
+    border: solid #30363D;
+    color: #E5E7EB;
+}
+
+#key-input:focus {
+    border: solid #4ADE80;
+}
+
+.status-message {
+    height: auto;
+    color: #60A5FA;
+    margin-bottom: 1;
+}
+
+.privacy-note {
+    color: #6B7280;
+    margin-top: 1;
+    margin-bottom: 1;
+}

@@ -27,7 +27,7 @@ class SetupStepPlaceholderScreen(Screen[None]):
         self.provider_id = provider_id
 
     def compose(self) -> ComposeResult:
-        from circuitgen.tui.screens.setup_provider import PROVIDER_DISPLAY_NAMES
+        from circuitgen.ai import PROVIDER_DISPLAY_NAMES
 
         provider_name = PROVIDER_DISPLAY_NAMES.get(self.provider_id, self.provider_id)
 

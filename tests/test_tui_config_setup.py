@@ -277,20 +277,24 @@ class TestFirstRunSetupScreens:
                 cfg = ConfigService.load(override_dir=temp_config_dir, force_reload=True)
                 assert cfg.default_provider == "anthropic"
 
-                # Now on Step 3 placeholder
-                assert isinstance(app.screen, SetupStepPlaceholderScreen)
+                # Now on Step 3 (SetupKeyScreen)
+                from circuitgen.tui.screens.setup_key import SetupKeyScreen
+                assert isinstance(app.screen, SetupKeyScreen)
                 assert app.screen.provider_id == "anthropic"
 
-                # Select "Go to home" to complete onboarding
+                # Navigate to "Skip for now" on key screen to complete to Home
+                key_menu = app.screen.query_one("#key-action-menu", SelectableMenu)
+                key_menu.selected_index = 3  # "skip"
+                key_menu.focus()
                 await pilot.press("enter")
                 await pilot.pause()
 
                 # Transitions to HomeScreen
                 assert isinstance(app.screen, HomeScreen)
 
-            # Verify onboarding completed in config
+            # Verify config updated
             final_cfg = ConfigService.load(override_dir=temp_config_dir, force_reload=True)
-            assert final_cfg.onboarding_status == "completed"
+            assert final_cfg.onboarding_status == "skipped"
             assert final_cfg.default_provider == "anthropic"
 
         asyncio.run(_run())

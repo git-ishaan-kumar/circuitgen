@@ -150,6 +150,20 @@ PROVIDERS: dict[str, dict[str, str]] = {
 
 ALIASES = {"google": "gemini", "claude": "anthropic", "chatgpt": "openai", "grok": "xai"}
 
+PROVIDER_DISPLAY_NAMES: dict[str, str] = {
+    "gemini": "Google Gemini",
+    "openai": "OpenAI",
+    "anthropic": "Anthropic",
+    "deepseek": "DeepSeek",
+    "groq": "Groq",
+    "mistral": "Mistral",
+    "xai": "xAI",
+    "openrouter": "OpenRouter",
+    "together": "Together AI",
+    "fireworks": "Fireworks AI",
+    "cerebras": "Cerebras",
+}
+
 
 def list_providers() -> list[str]:
     """Return supported provider identifiers."""
@@ -270,6 +284,7 @@ def generate_netlist(
     provider: str = DEFAULT_PROVIDER,
     model: str | None = None,
     correction: str = "",
+    api_key: str | None = None,
 ) -> dict[str, Any]:
     """Generate a JSON netlist using the selected AI provider.
 
@@ -286,7 +301,21 @@ def generate_netlist(
     chosen_model = model or settings["model"]
     if not isinstance(chosen_model, str) or not chosen_model.strip():
         raise CircuitError("Model must be a nonempty string")
-    key = os.environ.get(settings["key"], "").strip()
+
+    # Priority: explicit argument -> environment variable -> secure keyring
+    key = (api_key or "").strip()
+    if not key:
+        key = os.environ.get(settings["key"], "").strip()
+    if not key:
+        try:
+            from circuitgen.tui.services.credentials import CredentialService
+
+            resolved, _ = CredentialService.resolve_key(provider)
+            if resolved:
+                key = resolved.strip()
+        except Exception:
+            pass
+
     if not key:
         raise CircuitError(f"{settings['key']} is not set")
 

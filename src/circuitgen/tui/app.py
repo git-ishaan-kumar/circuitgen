@@ -9,6 +9,7 @@ from textual.binding import Binding
 from circuitgen import __version__
 from .screens.confirm_dialog import QuitModal
 from .screens.home import HomeScreen
+from .screens.setup_key import SetupKeyScreen
 from .screens.setup_provider import SetupProviderScreen
 from .screens.setup_step_placeholder import SetupStepPlaceholderScreen
 from .screens.setup_welcome import SetupWelcomeScreen
@@ -44,6 +45,7 @@ class CircuitGenApp(App[None]):
                 QuitModal,
                 SetupWelcomeScreen,
                 SetupProviderScreen,
+                SetupKeyScreen,
                 SetupStepPlaceholderScreen,
             ),
         ):

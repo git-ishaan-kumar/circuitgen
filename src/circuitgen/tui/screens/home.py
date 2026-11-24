@@ -26,9 +26,8 @@ MENU_ITEMS = [
 
 def get_ai_status() -> tuple[str, str, bool]:
     """Return (left_status, right_status, is_configured) based on environment / configuration."""
-    from circuitgen.ai import PROVIDERS
+    from circuitgen.ai import PROVIDER_DISPLAY_NAMES, PROVIDERS
     from circuitgen.tui.services.config import ConfigService
-    from circuitgen.tui.screens.setup_provider import PROVIDER_DISPLAY_NAMES
 
     try:
         config = ConfigService.load()

@@ -7,8 +7,8 @@ from textual.containers import Container, Horizontal, Vertical
 from textual.screen import Screen
 from textual.widgets import Header, Static
 
-from circuitgen.ai import list_providers
-from circuitgen.tui.screens.setup_step_placeholder import SetupStepPlaceholderScreen
+from circuitgen.ai import PROVIDER_DISPLAY_NAMES, list_providers
+from circuitgen.tui.screens.setup_key import SetupKeyScreen
 from circuitgen.tui.services.config import ConfigService
 from circuitgen.tui.widgets.selectable_menu import MenuItem, SelectableMenu
 
@@ -79,8 +79,8 @@ class SetupProviderScreen(Screen[None]):
         config.default_provider = provider_id
         ConfigService.save(config)
 
-        # Advance to Step 3 placeholder in Phase 3
-        self.app.push_screen(SetupStepPlaceholderScreen(step=3, provider_id=provider_id))
+        # Advance to Step 3 API key setup (Phase 4)
+        self.app.push_screen(SetupKeyScreen(provider_id=provider_id))
 
     def action_back(self) -> None:
         """Go back to Setup Welcome screen."""
