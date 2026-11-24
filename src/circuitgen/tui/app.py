@@ -9,6 +9,7 @@ from textual.binding import Binding
 from circuitgen import __version__
 from .screens.confirm_dialog import QuitModal
 from .screens.home import HomeScreen
+from .screens.render import RenderModeScreen, RenderSuccessScreen, ViewNetlistScreen
 from .screens.setup_key import SetupKeyScreen
 from .screens.setup_model import (
     SetupModelBrowseScreen,
@@ -63,6 +64,9 @@ class CircuitGenApp(App[None]):
             (
                 HomeScreen,
                 QuitModal,
+                RenderModeScreen,
+                RenderSuccessScreen,
+                ViewNetlistScreen,
                 SetupWelcomeScreen,
                 SetupProviderScreen,
                 SetupKeyScreen,

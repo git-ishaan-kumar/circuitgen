@@ -13,6 +13,7 @@ from textual.widgets import Footer, Header, Static
 from circuitgen import __version__
 from ..widgets.selectable_menu import MenuItem, SelectableMenu
 from .placeholder import PlaceholderScreen
+from .render import RenderModeScreen
 
 
 MENU_ITEMS = [
@@ -106,6 +107,10 @@ class HomeScreen(Screen[None]):
 
     def on_selectable_menu_selected(self, message: SelectableMenu.Selected) -> None:
         key = message.item.key
+        if key == "render":
+            self.app.push_screen(RenderModeScreen())
+            return
+
         page_titles = {
             "generate": ("Generate", "Create a schematic from a natural-language description"),
             "render": ("Render", "Render a JSON netlist into an SVG"),
