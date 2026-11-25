@@ -216,7 +216,7 @@ def test_render_engine_validation_failure(tmp_path: Path):
             await pilot.pause()
 
             status = app.screen.query_one("#render-file-status", Static)
-            assert "Circuit validation failed" in str(status.content)
+            assert "Invalid netlist" in str(status.content)
 
     asyncio.run(_run())
 

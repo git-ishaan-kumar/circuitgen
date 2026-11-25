@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from typing import Any
+from textual.binding import Binding
 from textual.widgets import TextArea
 
 from ..services.file_io import FileIOService
@@ -12,8 +13,16 @@ class JsonEditor(TextArea):
 
     - Tab key moves focus to the next field (tab_behavior='focus').
     - Enter key inserts a newline without submitting.
+    - Ctrl+A selects all text in the editor.
     - Preserves drafts and provides built-in JSON netlist validation.
     """
+
+    BINDINGS = [
+        Binding("ctrl+a,super+a", "select_all", "Select all", show=False, priority=True),
+        Binding("ctrl+c,super+c", "copy", "Copy", show=False),
+        Binding("ctrl+x,super+x", "cut", "Cut", show=False),
+        Binding("ctrl+v,super+v", "paste", "Paste", show=False),
+    ]
 
     def __init__(
         self,
@@ -32,6 +41,10 @@ class JsonEditor(TextArea):
             id=id,
             classes=classes,
         )
+
+    def action_select_all(self) -> None:
+        """Select all text in the editor."""
+        self.select_all()
 
     def validate_netlist(self) -> tuple[dict[str, Any] | None, str | None, tuple[int, int] | None]:
         """Validate the editor contents as a valid JSON netlist.

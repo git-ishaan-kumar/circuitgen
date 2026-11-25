@@ -14,6 +14,7 @@ from circuitgen import __version__
 from ..widgets.selectable_menu import MenuItem, SelectableMenu
 from .placeholder import PlaceholderScreen
 from .render import RenderModeScreen
+from .validate import ValidateModeScreen
 
 
 MENU_ITEMS = [
@@ -109,6 +110,9 @@ class HomeScreen(Screen[None]):
         key = message.item.key
         if key == "render":
             self.app.push_screen(RenderModeScreen())
+            return
+        if key == "validate":
+            self.app.push_screen(ValidateModeScreen())
             return
 
         page_titles = {

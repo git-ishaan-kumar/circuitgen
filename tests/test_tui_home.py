@@ -187,11 +187,11 @@ def test_ctrl_q_from_subpage_opens_quit_modal_and_cancel_retains_subpage():
     async def _run():
         app = CircuitGenApp()
         async with app.run_test(size=(100, 30)) as pilot:
-            # Enter "validate" subpage (which remains a placeholder until Phase 8)
-            await pilot.press("down", "down", "enter")
+            # Enter "settings" subpage (which remains a placeholder until Phase 9)
+            await pilot.press("down", "down", "down", "enter")
             await pilot.pause()
             assert isinstance(app.screen, PlaceholderScreen)
-            assert app.screen.page_name == "Validate"
+            assert app.screen.page_name == "Settings"
 
             # Press Ctrl+Q from subpage opens confirmation modal
             await pilot.press("ctrl+q")

@@ -256,7 +256,7 @@ class RenderFileScreen(Screen[None]):
         val_res = validate(data)
         if not val_res.valid:
             err_details = "\n".join(f"- {e}" for e in val_res.errors)
-            self.set_status(f"× Circuit validation failed:\n{err_details}")
+            self.set_status(f"× Invalid netlist\n{err_details}")
             return
 
         dest = FileIOService.resolve_output_path(output_dir_str, filename_str)
@@ -454,7 +454,7 @@ class RenderPasteScreen(Screen[None]):
         val_res = validate(data)
         if not val_res.valid:
             err_details = "\n".join(f"- {e}" for e in val_res.errors)
-            self.set_status(f"× Circuit validation failed:\n{err_details}")
+            self.set_status(f"× Invalid netlist\n{err_details}")
             return
 
         dest = FileIOService.resolve_output_path(output_dir_str, filename_str)

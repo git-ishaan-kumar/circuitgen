@@ -24,13 +24,17 @@ class EnhancedInput(Input):
         # Word deletion bindings (overriding Textual's default ctrl+backspace -> delete_right_word)
         Binding("ctrl+backspace", "delete_left_word", "Delete word left", show=False),
         Binding("ctrl+delete", "delete_right_word", "Delete word right", show=False),
-        # Select all binding (overriding Textual's default ctrl+a -> home)
-        Binding("ctrl+a", "select_all", "Select all", show=False),
+        # Select all binding with priority to override any parent home bindings
+        Binding("ctrl+a,super+a", "select_all", "Select all", show=False, priority=True),
         # Clipboard bindings with system clipboard integration
         Binding("ctrl+c,super+c", "copy", "Copy", show=False),
         Binding("ctrl+x", "cut", "Cut", show=False),
         Binding("ctrl+v,super+v", "paste", "Paste", show=False),
     ]
+
+    def action_select_all(self) -> None:
+        """Select all of the text in the Input."""
+        self.select_all()
 
     def action_copy(self) -> None:
         """Copy the current selection, or entire field if no selection exists."""

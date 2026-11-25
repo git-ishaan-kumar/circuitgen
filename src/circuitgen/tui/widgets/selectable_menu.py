@@ -76,16 +76,29 @@ class SelectableMenu(Widget, can_focus=True):
         return None
 
     def _ensure_cursor_visible(self) -> None:
-        """Keep the active cursor inside the visible window."""
+        """Keep the active cursor inside the visible window with a smooth 1-item cushion."""
         if not self.max_visible or len(self.items) <= self.max_visible:
             self.viewport_start = 0
             return
-        if self.cursor_index < self.viewport_start:
-            self.viewport_start = self.cursor_index
-        elif self.cursor_index >= self.viewport_start + self.max_visible:
-            self.viewport_start = self.cursor_index - self.max_visible + 1
+
         max_start = max(0, len(self.items) - self.max_visible)
+
+        # Scrolling down cushion: keep 1 item visible ahead if possible
+        if self.cursor_index >= self.viewport_start + self.max_visible - 1:
+            self.viewport_start = min(self.cursor_index - self.max_visible + 2, max_start)
+        # Scrolling up cushion: keep 1 item visible behind if possible
+        elif self.cursor_index <= self.viewport_start:
+            self.viewport_start = max(0, self.cursor_index - 1)
+
         self.viewport_start = max(0, min(self.viewport_start, max_start))
+
+    def set_items(self, items: Sequence[MenuItem], initial_index: int = 0) -> None:
+        """Replace menu items, resetting cursor and scroll viewport cleanly."""
+        self.items = list(items)
+        self.viewport_start = 0
+        self.cursor_index = max(0, min(initial_index, len(self.items) - 1)) if self.items else 0
+        self._ensure_cursor_visible()
+        self.refresh()
 
     def render(self) -> Text:
         """Render visible menu items with scroll indicators when windowed."""

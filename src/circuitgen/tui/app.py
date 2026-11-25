@@ -10,6 +10,7 @@ from circuitgen import __version__
 from .screens.confirm_dialog import QuitModal
 from .screens.home import HomeScreen
 from .screens.render import RenderModeScreen, RenderSuccessScreen, ViewNetlistScreen
+from .screens.validate import ValidateDetailsScreen, ValidateModeScreen, ValidateResultScreen
 from .screens.setup_key import SetupKeyScreen
 from .screens.setup_model import (
     SetupModelBrowseScreen,
@@ -67,6 +68,9 @@ class CircuitGenApp(App[None]):
                 RenderModeScreen,
                 RenderSuccessScreen,
                 ViewNetlistScreen,
+                ValidateModeScreen,
+                ValidateResultScreen,
+                ValidateDetailsScreen,
                 SetupWelcomeScreen,
                 SetupProviderScreen,
                 SetupKeyScreen,

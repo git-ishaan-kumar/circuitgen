@@ -19,6 +19,8 @@ class PathPickerModal(ModalScreen[Path | None]):
     BINDINGS = [
         Binding("escape", "cancel", "Cancel", show=True, priority=True),
         Binding("backspace", "go_parent", "Parent folder", show=False),
+        Binding("pageup", "page_up", "Page Up", show=False),
+        Binding("pagedown", "page_down", "Page Down", show=False),
         Binding("ctrl+q", "quit_app", "Quit", show=False, priority=True),
     ]
 
@@ -55,7 +57,7 @@ class PathPickerModal(ModalScreen[Path | None]):
             yield SelectableMenu(
                 items=items,
                 initial_index=0,
-                max_visible=10,
+                max_visible=8,
                 id="picker-menu",
             )
             yield Static(
@@ -144,8 +146,8 @@ class PathPickerModal(ModalScreen[Path | None]):
             self.query_one("#picker-current-path", Static).update(f"Location: {self.current_path}")
             self.query_one("#picker-status-msg", Static).update("")
             menu = self.query_one(SelectableMenu)
-            menu.items = self._build_menu_items()
-            menu.cursor_index = 0
+            items = self._build_menu_items()
+            menu.set_items(items, initial_index=0)
             menu.focus()
         except Exception:
             pass
@@ -153,6 +155,18 @@ class PathPickerModal(ModalScreen[Path | None]):
     def _set_status(self, msg: str) -> None:
         try:
             self.query_one("#picker-status-msg", Static).update(msg)
+        except Exception:
+            pass
+
+    def action_page_up(self) -> None:
+        try:
+            self.query_one(SelectableMenu).action_page_up()
+        except Exception:
+            pass
+
+    def action_page_down(self) -> None:
+        try:
+            self.query_one(SelectableMenu).action_page_down()
         except Exception:
             pass
 

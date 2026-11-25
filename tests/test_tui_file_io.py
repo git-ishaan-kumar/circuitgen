@@ -387,3 +387,57 @@ def test_path_picker_modal_cancel(tmp_path: Path):
             assert app.picked_path is None
 
     asyncio.run(_run())
+
+
+def test_json_editor_ctrl_a_select_all():
+    """Test that Ctrl+A selects all text in JsonEditor."""
+    class EditorHarnessApp(App[None]):
+        def compose(self) -> ComposeResult:
+            yield JsonEditor(text="line 1\nline 2\nline 3", id="test-editor")
+
+    async def _run():
+        app = EditorHarnessApp()
+        async with app.run_test() as pilot:
+            editor = app.query_one("#test-editor", JsonEditor)
+            editor.focus()
+            await pilot.press("ctrl+a")
+            assert editor.selected_text == "line 1\nline 2\nline 3"
+
+    asyncio.run(_run())
+
+
+def test_path_picker_modal_scroll_many_items(tmp_path: Path):
+    """Test that PathPickerModal correctly navigates and scrolls through 25+ files without clipping."""
+    # Create 25 files
+    for i in range(25):
+        (tmp_path / f"circuit_{i:02d}.json").write_text("{}", encoding="utf-8")
+
+    async def _run():
+        app = PathPickerHarnessApp()
+        async with app.run_test() as pilot:
+            app.show_picker(tmp_path, mode="file", filters=[".json"])
+            await pilot.pause()
+
+            menu = app.screen.query_one(SelectableMenu)
+            # Total items: 1 parent dir + 25 files = 26 items
+            assert len(menu.items) == 26
+
+            # Navigate down 20 times
+            for _ in range(20):
+                await pilot.press("down")
+
+            assert menu.cursor_index == 20
+            # Viewport should have shifted down smoothly
+            assert menu.viewport_start > 0
+            assert menu.viewport_start <= menu.cursor_index < menu.viewport_start + menu.max_visible
+
+            # Press Enter on the 20th item
+            await pilot.press("enter")
+            await pilot.pause()
+
+            # Successfully selected the 20th item
+            assert app.picked_path is not None
+            assert app.picked_path.exists()
+
+    asyncio.run(_run())
+

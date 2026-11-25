@@ -11,6 +11,13 @@ from .render import (
     RenderSuccessScreen,
     ViewNetlistScreen,
 )
+from .validate import (
+    ValidateDetailsScreen,
+    ValidateFileScreen,
+    ValidateModeScreen,
+    ValidatePasteScreen,
+    ValidateResultScreen,
+)
 
 __all__ = [
     "CreateDirectoryModal",
@@ -22,5 +29,10 @@ __all__ = [
     "RenderModeScreen",
     "RenderPasteScreen",
     "RenderSuccessScreen",
+    "ValidateDetailsScreen",
+    "ValidateFileScreen",
+    "ValidateModeScreen",
+    "ValidatePasteScreen",
+    "ValidateResultScreen",
     "ViewNetlistScreen",
 ]

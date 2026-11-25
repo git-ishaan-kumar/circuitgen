@@ -165,7 +165,8 @@ QuitModal, OverwriteModal, CreateDirectoryModal, PathPickerModal {
 
 #path-picker-dialog {
     width: 76;
-    height: 22;
+    height: auto;
+    max-height: 20;
     background: #161B22;
     border: solid #30363D;
     padding: 1 2;
@@ -311,4 +312,67 @@ JsonEditor:focus, TextArea:focus {
 .summary-value {
     color: #4ADE80;
     text-style: bold;
+}
+
+/* Validation Results (§6) */
+.validation-failed-title {
+    color: #F87171;
+    text-style: bold;
+    margin-top: 1;
+    margin-bottom: 1;
+}
+
+.error-card {
+    height: auto;
+    width: 100%;
+    margin-top: 1;
+    margin-bottom: 1;
+    background: #161B22;
+    border: solid #F87171;
+    padding: 1 2;
+}
+
+.error-text {
+    color: #F87171;
+    margin-bottom: 0;
+}
+
+.warning-text {
+    color: #FBBF24;
+    margin-bottom: 0;
+}
+
+.disclaimer-note {
+    color: #9CA3AF;
+    text-style: italic;
+    margin-top: 1;
+    margin-bottom: 0;
+}
+
+/* Validation Diagnostics (§6.3) */
+#diag-report-container {
+    height: auto;
+    max-height: 14;
+    overflow-y: auto;
+    background: #161B22;
+    border: solid #30363D;
+    padding: 1 2;
+    margin-top: 1;
+    margin-bottom: 1;
+}
+
+.diag-section-header {
+    text-style: bold;
+    margin-top: 1;
+    margin-bottom: 0;
+}
+
+.diag-error-row {
+    color: #F87171;
+    margin-bottom: 0;
+}
+
+.diag-warning-row {
+    color: #FBBF24;
+    margin-bottom: 0;
 }
