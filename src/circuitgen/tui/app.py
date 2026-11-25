@@ -5,6 +5,7 @@ from typing import Any
 
 from textual.app import App
 from textual.binding import Binding
+from textual.filter import NoColor
 
 from circuitgen import __version__
 from .screens.confirm_dialog import QuitModal
@@ -21,8 +22,9 @@ from .screens.setup_complete import SetupCompleteScreen
 from .screens.setup_provider import SetupProviderScreen
 from .screens.setup_step_placeholder import SetupStepPlaceholderScreen
 from .screens.setup_welcome import SetupWelcomeScreen
-from .services.config import ConfigService
+from .services.config import AppConfig, ConfigService
 from .clipboard import get_system_clipboard, set_system_clipboard
+from .themes import PALETTES, make_theme, palette
 
 
 class CircuitGenApp(App[None]):
@@ -34,9 +36,38 @@ class CircuitGenApp(App[None]):
     ENABLE_COMMAND_PALETTE = False
 
     BINDINGS = [
-        Binding("ctrl+q", "request_quit", "Quit", show=True, priority=True),
+        Binding("ctrl+q", "quit", "Quit", show=True, priority=True),
         Binding("q", "request_quit", "Quit", show=False),
     ]
+
+    def __init__(self, **kwargs) -> None:
+        super().__init__(**kwargs)
+        self._reduced_motion_default = self.animation_level
+        self._plain_colors = False
+        self._no_color_filter = NoColor()
+        for name in PALETTES:
+            self.register_theme(make_theme(name))
+
+    def get_theme_variable_defaults(self) -> dict[str, str]:
+        return {f"cg-{name}": value for name, value in palette().items()}
+
+    def apply_preferences(self, config: AppConfig) -> None:
+        self.animation_level = "none" if config.reduced_motion else self._reduced_motion_default
+        self._plain_colors = config.terminal_colors == "none"
+        self.theme = config.interface_theme if config.interface_theme in PALETTES else "pcb-green"
+        self.refresh()
+
+    def get_line_filters(self):
+        filters = super().get_line_filters()
+        return [*filters, self._no_color_filter] if self._plain_colors else filters
+
+    def return_from_reopened_setup(self) -> bool:
+        for index, screen in enumerate(self.screen_stack):
+            if isinstance(screen, SetupWelcomeScreen) and screen.restart:
+                for _ in range(len(self.screen_stack) - index):
+                    self.pop_screen()
+                return True
+        return False
 
     @property
     def clipboard(self) -> str:
@@ -53,6 +84,7 @@ class CircuitGenApp(App[None]):
 
     def on_mount(self) -> None:
         config = ConfigService.load()
+        self.apply_preferences(config)
         if config.should_show_onboarding():
             self.push_screen(SetupWelcomeScreen())
         else:

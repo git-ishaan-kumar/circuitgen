@@ -1,13 +1,13 @@
 /* CircuitGen Brand Palette and Layout Stylesheet (§2.1, §2.2, §16) */
 
 Screen {
-    background: #0D1117;
-    color: #E5E7EB;
+    background: $cg-background;
+    color: $cg-text;
 }
 
 Header {
-    background: #161B22;
-    color: #4ADE80;
+    background: $cg-surface;
+    color: $cg-accent;
     dock: top;
     height: 1;
 }
@@ -18,8 +18,8 @@ HeaderIcon {
 }
 
 Footer {
-    background: #161B22;
-    color: #9CA3AF;
+    background: $cg-surface;
+    color: $cg-muted;
     dock: bottom;
     height: 1;
 }
@@ -47,31 +47,31 @@ Footer {
 }
 
 .brand-title {
-    color: #4ADE80;
+    color: $cg-accent;
     text-style: bold;
     dock: left;
     width: auto;
 }
 
 .brand-version {
-    color: #9CA3AF;
+    color: $cg-muted;
     dock: right;
     width: auto;
 }
 
 .tagline {
-    color: #9CA3AF;
+    color: $cg-muted;
     margin-bottom: 1;
 }
 
 .rule {
-    color: #30363D;
+    color: $cg-border;
     height: 1;
     margin: 0;
 }
 
 .prompt-text {
-    color: #E5E7EB;
+    color: $cg-text;
     margin-top: 1;
     margin-bottom: 1;
     text-style: bold;
@@ -91,32 +91,32 @@ SelectableMenu {
 }
 
 .menu-row-selected {
-    background: #163D2B;
-    color: #4ADE80;
+    background: $cg-selection;
+    color: $cg-accent;
     text-style: bold;
 }
 
 .menu-chevron {
     width: 2;
-    color: #4ADE80;
+    color: $cg-accent;
 }
 
 .menu-label {
     width: 14;
-    color: #E5E7EB;
+    color: $cg-text;
     text-style: bold;
 }
 
 .menu-row-selected .menu-label {
-    color: #4ADE80;
+    color: $cg-accent;
 }
 
 .menu-description {
-    color: #9CA3AF;
+    color: $cg-muted;
 }
 
 .menu-row-selected .menu-description {
-    color: #E5E7EB;
+    color: $cg-text;
 }
 
 /* Status Bar Area */
@@ -129,24 +129,24 @@ SelectableMenu {
 
 .status-left {
     dock: left;
-    color: #9CA3AF;
+    color: $cg-muted;
 }
 
 .status-right {
     dock: right;
-    color: #9CA3AF;
+    color: $cg-muted;
 }
 
 .status-accent {
-    color: #4ADE80;
+    color: $cg-accent;
 }
 
 .status-notice {
-    color: #60A5FA;
+    color: $cg-info;
 }
 
 .keys-reminder {
-    color: #9CA3AF;
+    color: $cg-muted;
     margin-top: 1;
 }
 
@@ -155,11 +155,11 @@ QuitModal, OverwriteModal, CreateDirectoryModal, PathPickerModal {
     align: center middle;
 }
 
-#quit-dialog, #overwrite-dialog, #create-dir-dialog {
+#quit-dialog, #overwrite-dialog, #create-dir-dialog, ConfirmSettings .modal-dialog {
     width: 62;
     height: auto;
-    background: #161B22;
-    border: solid #30363D;
+    background: $cg-surface;
+    border: solid $cg-border;
     padding: 1 2;
 }
 
@@ -167,32 +167,32 @@ QuitModal, OverwriteModal, CreateDirectoryModal, PathPickerModal {
     width: 76;
     height: auto;
     max-height: 20;
-    background: #161B22;
-    border: solid #30363D;
+    background: $cg-surface;
+    border: solid $cg-border;
     padding: 1 2;
 }
 
 .modal-title {
-    color: #E5E7EB;
+    color: $cg-text;
     text-style: bold;
     margin-bottom: 1;
 }
 
 .modal-warning {
-    color: #9CA3AF;
+    color: $cg-muted;
     margin-bottom: 1;
 }
 
 /* JsonEditor and TextArea */
 JsonEditor, TextArea {
-    background: #0D1117;
-    border: solid #30363D;
-    color: #E5E7EB;
+    background: $cg-background;
+    border: solid $cg-border;
+    color: $cg-text;
     height: 12;
 }
 
 JsonEditor:focus, TextArea:focus {
-    border: solid #4ADE80;
+    border: solid $cg-accent;
 }
 
 /* Placeholder Screens */
@@ -205,18 +205,18 @@ JsonEditor:focus, TextArea:focus {
 #placeholder-card {
     width: 76;
     height: auto;
-    background: #161B22;
-    border: solid #30363D;
+    background: $cg-surface;
+    border: solid $cg-border;
     padding: 2 4;
 }
 
 .breadcrumb {
-    color: #9CA3AF;
+    color: $cg-muted;
     margin-bottom: 1;
 }
 
 .breadcrumb-active {
-    color: #4ADE80;
+    color: $cg-accent;
     text-style: bold;
 }
 
@@ -228,34 +228,34 @@ JsonEditor:focus, TextArea:focus {
 }
 
 .breadcrumb-left {
-    color: #4ADE80;
+    color: $cg-accent;
     text-style: bold;
     dock: left;
     width: auto;
 }
 
 .breadcrumb-right {
-    color: #9CA3AF;
+    color: $cg-muted;
     dock: right;
     width: auto;
 }
 
 .setup-title {
-    color: #E5E7EB;
+    color: $cg-text;
     text-style: bold;
     margin-top: 1;
     margin-bottom: 0;
 }
 
 .setup-tagline {
-    color: #9CA3AF;
+    color: $cg-muted;
     margin-top: 0;
     margin-bottom: 1;
 }
 
 /* API Key Input Screen (§3.3) */
 .input-field-label {
-    color: #E5E7EB;
+    color: $cg-text;
     margin-top: 1;
     margin-bottom: 0;
     text-style: bold;
@@ -265,23 +265,23 @@ JsonEditor:focus, TextArea:focus {
     width: 100%;
     margin-top: 0;
     margin-bottom: 1;
-    background: #161B22;
-    border: solid #30363D;
-    color: #E5E7EB;
+    background: $cg-surface;
+    border: solid $cg-border;
+    color: $cg-text;
 }
 
 #key-input:focus {
-    border: solid #4ADE80;
+    border: solid $cg-accent;
 }
 
 .status-message {
     height: auto;
-    color: #60A5FA;
+    color: $cg-info;
     margin-bottom: 1;
 }
 
 .privacy-note {
-    color: #6B7280;
+    color: $cg-muted;
     margin-top: 1;
     margin-bottom: 1;
 }
@@ -292,8 +292,8 @@ JsonEditor:focus, TextArea:focus {
     width: 100%;
     margin-top: 1;
     margin-bottom: 1;
-    background: #161B22;
-    border: solid #30363D;
+    background: $cg-surface;
+    border: solid $cg-border;
     padding: 1 2;
 }
 
@@ -305,18 +305,18 @@ JsonEditor:focus, TextArea:focus {
 
 .summary-label {
     width: 16;
-    color: #9CA3AF;
+    color: $cg-muted;
     text-style: bold;
 }
 
 .summary-value {
-    color: #4ADE80;
+    color: $cg-accent;
     text-style: bold;
 }
 
 /* Validation Results (§6) */
 .validation-failed-title {
-    color: #F87171;
+    color: $cg-error;
     text-style: bold;
     margin-top: 1;
     margin-bottom: 1;
@@ -327,23 +327,23 @@ JsonEditor:focus, TextArea:focus {
     width: 100%;
     margin-top: 1;
     margin-bottom: 1;
-    background: #161B22;
-    border: solid #F87171;
+    background: $cg-surface;
+    border: solid $cg-error;
     padding: 1 2;
 }
 
 .error-text {
-    color: #F87171;
+    color: $cg-error;
     margin-bottom: 0;
 }
 
 .warning-text {
-    color: #FBBF24;
+    color: $cg-warning;
     margin-bottom: 0;
 }
 
 .disclaimer-note {
-    color: #9CA3AF;
+    color: $cg-muted;
     text-style: italic;
     margin-top: 1;
     margin-bottom: 0;
@@ -354,8 +354,8 @@ JsonEditor:focus, TextArea:focus {
     height: auto;
     max-height: 14;
     overflow-y: auto;
-    background: #161B22;
-    border: solid #30363D;
+    background: $cg-surface;
+    border: solid $cg-border;
     padding: 1 2;
     margin-top: 1;
     margin-bottom: 1;
@@ -368,11 +368,21 @@ JsonEditor:focus, TextArea:focus {
 }
 
 .diag-error-row {
-    color: #F87171;
+    color: $cg-error;
     margin-bottom: 0;
 }
 
 .diag-warning-row {
-    color: #FBBF24;
+    color: $cg-warning;
     margin-bottom: 0;
+}
+
+ConfirmSettings {
+    align: center middle;
+    background: $cg-background 60%;
+}
+
+#color-grid {
+    width: 24;
+    height: 10;
 }

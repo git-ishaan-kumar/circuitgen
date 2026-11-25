@@ -16,7 +16,6 @@ class QuitModal(ModalScreen[bool]):
 
     BINDINGS = [
         Binding("escape", "cancel", "Cancel", show=True, priority=True),
-        Binding("ctrl+q", "confirm_quit", "Quit", show=False, priority=True),
         Binding("q", "confirm_quit", "Quit", show=False),
     ]
 
@@ -32,7 +31,7 @@ class QuitModal(ModalScreen[bool]):
                 initial_index=0,
                 id="quit-menu",
             )
-            yield Static("↑↓ Navigate  ·  Enter Select  ·  Esc Cancel", classes="status-left")
+            yield Static("↑↓ Navigate  ·  Enter Select  ·  Esc Cancel", classes="keys-reminder")
 
     def on_mount(self) -> None:
         self.query_one(SelectableMenu).focus()
@@ -55,7 +54,6 @@ class OverwriteModal(ModalScreen[bool]):
 
     BINDINGS = [
         Binding("escape", "cancel", "Cancel", show=True, priority=True),
-        Binding("ctrl+q", "quit_app", "Quit", show=False, priority=True),
     ]
 
     def __init__(self, target_path: Path | str, **kwargs) -> None:
@@ -91,16 +89,12 @@ class OverwriteModal(ModalScreen[bool]):
     def action_cancel(self) -> None:
         self.dismiss(False)
 
-    def action_quit_app(self) -> None:
-        self.app.exit()
-
 
 class CreateDirectoryModal(ModalScreen[bool]):
     """Modal dialog prompting confirmation before creating a missing directory."""
 
     BINDINGS = [
         Binding("escape", "cancel", "Cancel", show=True, priority=True),
-        Binding("ctrl+q", "quit_app", "Quit", show=False, priority=True),
     ]
 
     def __init__(self, target_dir: Path | str, **kwargs) -> None:
@@ -135,6 +129,3 @@ class CreateDirectoryModal(ModalScreen[bool]):
 
     def action_cancel(self) -> None:
         self.dismiss(False)
-
-    def action_quit_app(self) -> None:
-        self.app.exit()

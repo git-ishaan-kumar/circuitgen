@@ -181,11 +181,13 @@ class FileIOService:
         destination: Path,
         allow_overwrite: bool = True,
     ) -> tuple[bool, str]:
-        """Save SVG text atomically using a temporary file to avoid partial/corrupt writes.
+        return cls.save_output(svg_content, destination, allow_overwrite)
 
-        Returns:
-            (success, resolved_path_or_error_message)
-        """
+    @classmethod
+    def save_output(
+        cls, content: str | bytes, destination: Path, allow_overwrite: bool = True,
+    ) -> tuple[bool, str]:
+        """Write a complete output before replacing the destination."""
         if destination.exists() and not allow_overwrite:
             return False, f"File already exists and overwrite was not permitted: {destination}"
 
@@ -198,22 +200,23 @@ class FileIOService:
         tmp_file: tempfile.NamedTemporaryFile | None = None
         tmp_path: Path | None = None
         try:
-            tmp_file = tempfile.NamedTemporaryFile(
-                mode="w",
-                encoding="utf-8",
+            with tempfile.NamedTemporaryFile(
+                mode="wb",
                 dir=str(parent_dir),
                 prefix=f".tmp_{destination.stem}_",
                 suffix=".tmp",
                 delete=False,
-            )
-            tmp_path = Path(tmp_file.name)
-            tmp_file.write(svg_content)
-            tmp_file.flush()
-            os.fsync(tmp_file.fileno())
-            tmp_file.close()
+            ) as tmp_file:
+                tmp_path = Path(tmp_file.name)
+                tmp_file.write(content.encode("utf-8") if isinstance(content, str) else content)
+                tmp_file.flush()
+                os.fsync(tmp_file.fileno())
 
-            # Atomic replace
-            os.replace(tmp_path, destination)
+            if allow_overwrite:
+                os.replace(tmp_path, destination)
+            else:
+                os.link(tmp_path, destination)
+                tmp_path.unlink()
             return True, str(destination)
 
         except PermissionError:

@@ -32,7 +32,6 @@ class SetupProviderScreen(Screen[None]):
 
     BINDINGS = [
         Binding("escape", "back", "Back", show=False),
-        Binding("ctrl+q", "quit", "Quit", show=False, priority=True),
         Binding("q", "quit", "Quit", show=False),
     ]
 
@@ -76,8 +75,11 @@ class SetupProviderScreen(Screen[None]):
         """Handle provider selection."""
         provider_id = event.item.key
         config = ConfigService.load()
-        config.default_provider = provider_id
-        ConfigService.save(config)
+        if not any(getattr(screen, "restart", False) for screen in self.app.screen_stack):
+            if config.default_provider != provider_id:
+                config.model_mode, config.explicit_model = "automatic", None
+            config.default_provider = provider_id
+            ConfigService.save(config)
 
         # Advance to Step 3 API key setup (Phase 4)
         self.app.push_screen(SetupKeyScreen(provider_id=provider_id))

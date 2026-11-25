@@ -170,8 +170,19 @@ def list_providers() -> list[str]:
     return list(PROVIDERS)
 
 
+class ClarificationRequired(CircuitError):
+    """The provider needs more detail about the intended wiring."""
+
+
+class ProviderRequestError(CircuitError):
+    def __init__(self, message: str, *, status: int | None = None, transient: bool = False) -> None:
+        super().__init__(message)
+        self.status = status
+        self.transient = transient
+
+
 def _post_json(url: str, payload: dict[str, Any], headers: dict[str, str],
-               provider: str) -> dict[str, Any]:
+               provider: str, *, timeout: float = 120) -> dict[str, Any]:
     req = urllib.request.Request(
         url,
         data=json.dumps(payload, ensure_ascii=False).encode("utf-8"),
@@ -179,23 +190,25 @@ def _post_json(url: str, payload: dict[str, Any], headers: dict[str, str],
         method="POST",
     )
     try:
-        with urllib.request.urlopen(req, timeout=120) as res:
+        with urllib.request.urlopen(req, timeout=timeout) as res:
             data = json.loads(res.read().decode("utf-8"))
     except urllib.error.HTTPError as exc:
-        detail = exc.read().decode("utf-8", errors="replace")[:700]
-        raise CircuitError(f"{provider} API HTTP {exc.code}: {detail}") from exc
-    except (urllib.error.URLError, TimeoutError, OSError) as exc:
-        raise CircuitError(f"{provider} API connection problem: {exc}") from exc
+        raise ProviderRequestError(
+            f"{provider} API returned HTTP {exc.code}",
+            status=exc.code, transient=exc.code in (500, 502, 503, 504),
+        ) from None
+    except (urllib.error.URLError, TimeoutError, OSError):
+        raise ProviderRequestError(f"{provider} API connection problem", transient=True) from None
     except (ValueError, UnicodeError) as exc:
         raise CircuitError(f"{provider} API returned invalid response JSON") from exc
     if not isinstance(data, dict):
         raise CircuitError(f"{provider} API response was not an object")
     if data.get("error"):
-        raise CircuitError(f"{provider} API error: {str(data['error'])[:700]}")
+        raise CircuitError(f"{provider} API reported an error")
     return data
 
 
-def _parse_netlist(raw: str, provider: str) -> dict[str, Any]:
+def _parse_netlist(raw: str, provider: str, *, clarify: bool = False) -> dict[str, Any]:
     text = raw.strip()
     if text.startswith("```"):
         text = re.sub(r"^```(?:json)?\s*", "", text, flags=re.IGNORECASE)
@@ -206,24 +219,33 @@ def _parse_netlist(raw: str, provider: str) -> dict[str, Any]:
         raise CircuitError(f"{provider} did not return valid netlist JSON") from exc
     if not isinstance(decoded, dict):
         raise CircuitError(f"{provider} JSON was not an object")
+    if clarify and set(decoded) == {"question"}:
+        question = decoded["question"]
+        if isinstance(question, str) and question.strip() and len(question) <= 300:
+            raise ClarificationRequired(question.strip())
     if not isinstance(decoded.get("components"), list) or not isinstance(decoded.get("nets"), list):
         raise CircuitError(f"{provider} JSON must contain components and nets arrays")
     return decoded
 
 
-def _gemini(full_text: str, model: str, key: str) -> str:
+def _gemini(full_text: str, model: str, key: str, *, timeout: float = 120, clarify: bool = False) -> str:
     payload = {
         "contents": [{"role": "user", "parts": [{"text": full_text}]}],
         "generationConfig": {
             "temperature": 0,
             "responseMimeType": "application/json",
-            "responseJsonSchema": SCHEMA,
+            "responseJsonSchema": {
+                "anyOf": [
+                    SCHEMA,
+                    {"type": "object", "properties": {"question": {"type": "string"}}, "required": ["question"]},
+                ],
+            } if clarify else SCHEMA,
         },
     }
     safe_model = urllib.parse.quote(model, safe="-._/")
     data = _post_json(
         f"https://generativelanguage.googleapis.com/v1beta/models/{safe_model}:generateContent",
-        payload, {"x-goog-api-key": key}, "gemini",
+        payload, {"x-goog-api-key": key}, "gemini", timeout=timeout,
     )
     try:
         parts = data["candidates"][0]["content"]["parts"]
@@ -232,7 +254,7 @@ def _gemini(full_text: str, model: str, key: str) -> str:
         raise CircuitError("Gemini returned no usable text (possibly blocked or truncated)") from exc
 
 
-def _anthropic(full_text: str, model: str, key: str) -> str:
+def _anthropic(full_text: str, model: str, key: str, *, timeout: float = 120) -> str:
     payload = {
         "model": model,
         "max_tokens": 8192,
@@ -242,7 +264,7 @@ def _anthropic(full_text: str, model: str, key: str) -> str:
     }
     data = _post_json(
         PROVIDERS["anthropic"]["url"], payload,
-        {"x-api-key": key, "anthropic-version": "2023-06-01"}, "anthropic",
+        {"x-api-key": key, "anthropic-version": "2023-06-01"}, "anthropic", timeout=timeout,
     )
     if data.get("stop_reason") == "max_tokens":
         raise CircuitError("Anthropic response was truncated; try a simpler circuit")
@@ -253,7 +275,7 @@ def _anthropic(full_text: str, model: str, key: str) -> str:
     return raw
 
 
-def _openai_compatible(full_text: str, provider: str, model: str, key: str) -> str:
+def _openai_compatible(full_text: str, provider: str, model: str, key: str, *, timeout: float = 120) -> str:
     payload = {
         "model": model,
         "messages": [
@@ -263,7 +285,7 @@ def _openai_compatible(full_text: str, provider: str, model: str, key: str) -> s
     }
     data = _post_json(
         PROVIDERS[provider]["url"], payload,
-        {"Authorization": f"Bearer {key}"}, provider,
+        {"Authorization": f"Bearer {key}"}, provider, timeout=timeout,
     )
     try:
         choice = data["choices"][0]
@@ -285,6 +307,11 @@ def generate_netlist(
     model: str | None = None,
     correction: str = "",
     api_key: str | None = None,
+    *,
+    timeout: float = 120,
+    retry_transient: bool = False,
+    allow_model_fallback: bool = False,
+    clarify: bool = False,
 ) -> dict[str, Any]:
     """Generate a JSON netlist using the selected AI provider.
 
@@ -292,6 +319,8 @@ def generate_netlist(
     """
     if not isinstance(user_prompt, str) or not user_prompt.strip():
         raise CircuitError("Circuit description must be a nonempty string")
+    if not 0 < timeout <= 600:
+        raise ValueError("Request timeout must be greater than 0 and at most 600 seconds")
     provider = ALIASES.get(provider.strip().lower(), provider.strip().lower())
     if provider not in PROVIDERS:
         raise CircuitError(
@@ -320,15 +349,33 @@ def generate_netlist(
         raise CircuitError(f"{settings['key']} is not set")
 
     full_text = PROMPT + user_prompt
+    if clarify:
+        full_text += (
+            '\nIf essential wiring is ambiguous, return only {"question":"one short question"}.'
+            " Ask only when you cannot determine the intended connections."
+        )
     if correction:
         full_text += (
             "\n\nPREVIOUS OUTPUT WAS REJECTED. Return a corrected full netlist. "
             "Do not claim unsupported circuit is possible. Error: " + correction[:900]
         )
-    if provider == "gemini":
-        raw = _gemini(full_text, chosen_model, key)
-    elif provider == "anthropic":
-        raw = _anthropic(full_text, chosen_model, key)
-    else:
-        raw = _openai_compatible(full_text, provider, chosen_model, key)
-    return _parse_netlist(raw, provider)
+    def request(model_id: str) -> str:
+        options = {"timeout": timeout} if timeout != 120 else {}
+        if provider == "gemini":
+            if clarify:
+                options["clarify"] = True
+            return _gemini(full_text, model_id, key, **options)
+        if provider == "anthropic":
+            return _anthropic(full_text, model_id, key, **options)
+        return _openai_compatible(full_text, provider, model_id, key, **options)
+
+    try:
+        raw = request(chosen_model)
+    except ProviderRequestError as exc:
+        if allow_model_fallback and exc.status == 404 and chosen_model != settings["model"]:
+            raw = request(settings["model"])
+        elif retry_transient and exc.transient:
+            raw = request(chosen_model)
+        else:
+            raise
+    return _parse_netlist(raw, provider, clarify=clarify)

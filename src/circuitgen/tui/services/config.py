@@ -12,6 +12,7 @@ from typing import Any
 from uuid import uuid4
 
 import platformdirs
+from circuitgen.export import OUTPUT_FORMATS, SchematicStyle
 
 logger = logging.getLogger(__name__)
 
@@ -30,10 +31,44 @@ class AppConfig:
     explicit_model: str | None = None
     default_output_dir: str = "./output/"
     overwrite_confirmation: bool = True
-    fallback_policy: str = "ask"
-    interface_theme: str = "dark"
+    fallback_policy: str = "off"
+    interface_theme: str = "pcb-green"
+    reduced_motion: bool = False
+    terminal_colors: str = "auto"
+    output_format: str = "svg"
+    auto_open: bool = False
+    save_netlist: bool = False
+    background: str = "transparent"
+    component_color: str | None = None
+    wire_color: str | None = None
+    text_color: str | None = None
+    show_component_ids: bool = True
+    show_component_values: bool = True
+    retry_transient: bool = True
+    essential_clarifications: bool = True
+    request_timeout: int = 120
     # Runtime diagnostic attributes (not written to disk)
     load_warning: str | None = field(default=None, repr=False, compare=False)
+
+    def schematic_style(self) -> SchematicStyle:
+        return SchematicStyle(**{name: getattr(self, name) for name in SchematicStyle.__dataclass_fields__})
+
+    def generate(self, description: str, **kwargs):
+        """Generate using the saved provider, request policy, and appearance."""
+        from circuitgen import generate
+
+        return generate(
+            description,
+            provider=self.default_provider,
+            model=self.explicit_model if self.model_mode == "manual" else None,
+            timeout=self.request_timeout,
+            retry_transient=self.retry_transient,
+            allow_model_fallback=self.fallback_policy == "auto",
+            clarify=self.essential_clarifications,
+            style=self.schematic_style(),
+            output_format=self.output_format,
+            **kwargs,
+        )
 
     def should_show_onboarding(self) -> bool:
         """Return True if first-run setup wizard should be presented."""
@@ -68,7 +103,7 @@ class AppConfig:
         if provider not in valid_providers:
             provider = "gemini"
 
-        return cls(
+        config = cls(
             schema_version=int(data.get("schema_version", CURRENT_SCHEMA_VERSION)),
             onboarding_status=str(onboarding),
             default_provider=str(provider),
@@ -76,10 +111,34 @@ class AppConfig:
             explicit_model=data.get("explicit_model"),
             default_output_dir=str(data.get("default_output_dir", "./output/")),
             overwrite_confirmation=bool(data.get("overwrite_confirmation", True)),
-            fallback_policy=str(data.get("fallback_policy", "ask")),
-            interface_theme=str(data.get("interface_theme", "dark")),
+            fallback_policy="auto" if data.get("fallback_policy") == "auto" else "off",
             load_warning=warning,
         )
+        choices = {
+            "interface_theme": ("pcb-green", "midnight-blue", "light", "monochrome", "terminal"),
+            "terminal_colors": ("auto", "none"),
+            "output_format": OUTPUT_FORMATS,
+        }
+        for name, options in choices.items():
+            if data.get(name) in options:
+                setattr(config, name, data[name])
+        for name in (
+            "reduced_motion", "auto_open", "save_netlist", "show_component_ids",
+            "show_component_values", "retry_transient", "essential_clarifications",
+        ):
+            if isinstance(data.get(name), bool):
+                setattr(config, name, data[name])
+        timeout = data.get("request_timeout")
+        if type(timeout) is int and 1 <= timeout <= 600:
+            config.request_timeout = timeout
+        for name in ("background", "component_color", "wire_color", "text_color"):
+            if name in data:
+                try:
+                    SchematicStyle(**{name: data[name]})
+                except ValueError:
+                    continue
+                setattr(config, name, data[name])
+        return config
 
 
 class ConfigService:

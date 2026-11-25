@@ -38,6 +38,8 @@ class EnhancedInput(Input):
 
     def action_copy(self) -> None:
         """Copy the current selection, or entire field if no selection exists."""
+        if self.password:
+            return
         selected_text = self.selected_text
         if selected_text:
             self.app.copy_to_clipboard(selected_text)
@@ -46,6 +48,8 @@ class EnhancedInput(Input):
 
     def action_cut(self) -> None:
         """Cut the current selection (or entire field if no selection) to clipboard."""
+        if self.password:
+            return
         selected_text = self.selected_text
         if selected_text:
             self.app.copy_to_clipboard(selected_text)

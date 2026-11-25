@@ -21,25 +21,28 @@ class SetupKeyScreen(Screen[None]):
 
     BINDINGS = [
         Binding("escape", "back", "Back", show=False),
-        Binding("ctrl+q", "quit", "Quit", show=False, priority=True),
         Binding("q", "quit", "Quit", show=False),
         Binding("tab", "toggle_focus", "Toggle Focus", show=False),
     ]
 
-    def __init__(self, provider_id: str = "gemini", **kwargs) -> None:
+    def __init__(self, provider_id: str = "gemini", *, settings: bool = False, **kwargs) -> None:
         super().__init__(**kwargs)
         self.provider_id = provider_id
+        self.settings = settings
 
     def compose(self) -> ComposeResult:
         provider_name = PROVIDER_DISPLAY_NAMES.get(self.provider_id, self.provider_id.title())
+        _, source = CredentialService.resolve_key(self.provider_id)
 
         yield Header(show_clock=False)
         with Container(id="home-container"):
             with Vertical(id="home-card"):
                 # Header row
                 with Horizontal(classes="breadcrumb-row"):
-                    yield Static("CircuitGen / Setup", classes="breadcrumb-left")
-                    yield Static("Step 3 of 4", classes="breadcrumb-right")
+                    yield Static("CircuitGen / Settings / API Keys" if self.settings else "CircuitGen / Setup",
+                                 classes="breadcrumb-left")
+                    if not self.settings:
+                        yield Static("Step 3 of 4", classes="breadcrumb-right")
 
                 yield Static("─" * 62, classes="rule")
 
@@ -61,7 +64,9 @@ class SetupKeyScreen(Screen[None]):
                         MenuItem("verify", "Verify and save key", "Test connection with provider and save to secure storage"),
                         MenuItem("save_unverified", "Save without verification", "Save key directly to secure storage without testing"),
                         MenuItem("how_to_get", "How do I get an API key?", f"View official key portal for {provider_name}"),
-                        MenuItem("skip", "Skip for now", "Continue to Home without configuring an API key"),
+                        MenuItem("skip", "Cancel" if self.settings else "Skip for now", ""),
+                        *([MenuItem("keep", "Use existing key", "Continue to model selection")]
+                          if not self.settings and source != "none" else []),
                     ],
                     initial_index=0,
                     id="key-action-menu",
@@ -112,6 +117,12 @@ class SetupKeyScreen(Screen[None]):
         action_key = event.item.key
         key_input = self.query_one("#key-input", Input)
         entered_key = key_input.value.strip()
+        if action_key in ("verify", "save_unverified"):
+            _, source = CredentialService.resolve_key(self.provider_id)
+            if source == "environment":
+                name = CredentialService.get_provider_env_var(self.provider_id)
+                self.set_status(f"This key is managed by {name} outside CircuitGen.")
+                return
 
         if action_key == "verify":
             if not entered_key:
@@ -132,11 +143,10 @@ class SetupKeyScreen(Screen[None]):
             if res.success:
                 try:
                     CredentialService.save_key(self.provider_id, entered_key)
-                except Exception as exc:
-                    self.set_status(f"! Failed to save key: {exc}")
+                except Exception:
+                    self.set_status("! Could not save the API key.")
                     return
-                self.clear_secret()
-                self.app.push_screen(SetupModelScreen(provider_id=self.provider_id))
+                self._key_saved()
             else:
                 self.set_status(res.message)
 
@@ -151,24 +161,38 @@ class SetupKeyScreen(Screen[None]):
             except InsecureBackendError as exc:
                 self.set_status(f"! {exc}")
                 return
-            except Exception as exc:
-                self.set_status(f"! Could not save credential: {exc}")
+            except Exception:
+                self.set_status("! Could not save the API key.")
                 return
 
-            self.clear_secret()
-            self.app.push_screen(SetupModelScreen(provider_id=self.provider_id))
+            self._key_saved()
 
         elif action_key == "how_to_get":
             url = CredentialService.get_provider_url(self.provider_id)
             provider_name = PROVIDER_DISPLAY_NAMES.get(self.provider_id, self.provider_id.title())
             self.set_status(f"Official {provider_name} API portal:\n{url}")
 
+        elif action_key == "keep":
+            self._key_saved()
+
         elif action_key == "skip":
+            if self.settings:
+                self.action_back()
+                return
             self.clear_secret()
+            if self.app.return_from_reopened_setup():
+                return
             config = ConfigService.load()
             config.mark_onboarding_skipped()
             ConfigService.save(config)
             self.app.switch_screen(HomeScreen())
+
+    def _key_saved(self) -> None:
+        self.clear_secret()
+        if self.settings:
+            self.app.pop_screen()
+        else:
+            self.app.push_screen(SetupModelScreen(provider_id=self.provider_id))
 
     def action_back(self) -> None:
         """Return to previous screen, clearing the secret from memory."""

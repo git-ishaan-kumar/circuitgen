@@ -20,7 +20,6 @@ class SetupModelBrowseScreen(Screen[None]):
 
     BINDINGS = [
         Binding("escape", "back", "Back", show=False),
-        Binding("ctrl+q", "quit", "Quit", show=False, priority=True),
         Binding("q", "quit", "Quit", show=False),
     ]
 
@@ -60,6 +59,7 @@ class SetupModelBrowseScreen(Screen[None]):
     def on_selectable_menu_selected(self, event: SelectableMenu.Selected) -> None:
         chosen_model_id = event.item.key
         config = ConfigService.load()
+        config.default_provider = self.provider_id
         config.model_mode = "manual"
         config.explicit_model = chosen_model_id
         ConfigService.save(config)
@@ -77,7 +77,6 @@ class SetupModelManualScreen(Screen[None]):
 
     BINDINGS = [
         Binding("escape", "back", "Back", show=False),
-        Binding("ctrl+q", "quit", "Quit", show=False, priority=True),
         Binding("q", "quit", "Quit", show=False),
     ]
 
@@ -142,6 +141,7 @@ class SetupModelManualScreen(Screen[None]):
             return
 
         config = ConfigService.load()
+        config.default_provider = self.provider_id
         config.model_mode = "manual"
         config.explicit_model = model_id
         ConfigService.save(config)
@@ -159,7 +159,6 @@ class SetupModelScreen(Screen[None]):
 
     BINDINGS = [
         Binding("escape", "back", "Back", show=False),
-        Binding("ctrl+q", "quit", "Quit", show=False, priority=True),
         Binding("q", "quit", "Quit", show=False),
     ]
 
@@ -219,6 +218,7 @@ class SetupModelScreen(Screen[None]):
 
         if choice == "auto":
             config = ConfigService.load()
+            config.default_provider = self.provider_id
             config.model_mode = "automatic"
             config.explicit_model = None
             ConfigService.save(config)

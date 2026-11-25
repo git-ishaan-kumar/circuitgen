@@ -69,7 +69,6 @@ class ValidateModeScreen(Screen[None]):
 
     BINDINGS = [
         Binding("escape", "back_home", "Home", show=False),
-        Binding("ctrl+q", "quit_app", "Quit", show=False, priority=True),
         Binding("q", "quit_app", "Quit", show=False),
     ]
 
@@ -128,7 +127,6 @@ class ValidateFileScreen(Screen[None]):
 
     BINDINGS = [
         Binding("escape", "back", "Back", show=False),
-        Binding("ctrl+q", "quit_app", "Quit", show=False, priority=True),
         Binding("q", "quit_app", "Quit", show=False),
         Binding("tab", "toggle_focus", "Toggle Focus", show=False),
     ]
@@ -244,7 +242,6 @@ class ValidatePasteScreen(Screen[None]):
 
     BINDINGS = [
         Binding("escape", "back", "Back", show=False),
-        Binding("ctrl+q", "quit_app", "Quit", show=False, priority=True),
         Binding("q", "quit_app", "Quit", show=False),
         Binding("tab", "toggle_focus", "Toggle Focus", show=False),
     ]
@@ -367,7 +364,6 @@ class ValidateResultScreen(Screen[None]):
 
     BINDINGS = [
         Binding("escape", "back_home", "Home", show=False),
-        Binding("ctrl+q", "quit_app", "Quit", show=False, priority=True),
         Binding("q", "quit_app", "Quit", show=False),
     ]
 
@@ -484,7 +480,6 @@ class ValidateDetailsScreen(Screen[None]):
 
     BINDINGS = [
         Binding("escape", "back", "Back", show=False),
-        Binding("ctrl+q", "quit_app", "Quit", show=False, priority=True),
         Binding("q", "quit_app", "Quit", show=False),
     ]
 

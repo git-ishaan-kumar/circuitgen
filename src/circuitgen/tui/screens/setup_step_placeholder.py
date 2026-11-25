@@ -17,7 +17,6 @@ class SetupStepPlaceholderScreen(Screen[None]):
 
     BINDINGS = [
         Binding("escape", "back", "Back", show=False),
-        Binding("ctrl+q", "quit", "Quit", show=False, priority=True),
         Binding("q", "quit", "Quit", show=False),
     ]
 

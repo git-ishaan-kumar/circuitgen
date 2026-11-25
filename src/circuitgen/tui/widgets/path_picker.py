@@ -21,7 +21,6 @@ class PathPickerModal(ModalScreen[Path | None]):
         Binding("backspace", "go_parent", "Parent folder", show=False),
         Binding("pageup", "page_up", "Page Up", show=False),
         Binding("pagedown", "page_down", "Page Down", show=False),
-        Binding("ctrl+q", "quit_app", "Quit", show=False, priority=True),
     ]
 
     def __init__(
@@ -206,6 +205,3 @@ class PathPickerModal(ModalScreen[Path | None]):
 
     def action_cancel(self) -> None:
         self.dismiss(None)
-
-    def action_quit_app(self) -> None:
-        self.app.exit()

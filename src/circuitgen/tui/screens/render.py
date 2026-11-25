@@ -15,6 +15,7 @@ from textual.screen import Screen
 from textual.widgets import Header, Static
 
 from circuitgen.api import from_netlist, validate
+from circuitgen.export import OUTPUT_FORMATS
 from circuitgen.tui.screens.confirm_dialog import CreateDirectoryModal, OverwriteModal
 from circuitgen.tui.services.config import ConfigService
 from circuitgen.tui.services.file_io import FileIOService
@@ -44,12 +45,89 @@ def open_file_in_system_viewer(path: Path) -> tuple[bool, str]:
 # R0 — Choose Input Mode
 # ---------------------------------------------------------------------------
 
+def save_render(
+    screen: RenderFileScreen | RenderPasteScreen,
+    data: dict[str, Any],
+    directory: str,
+    filename: str,
+    source_label: str,
+    *,
+    input_path: Path | None = None,
+) -> None:
+    config = ConfigService.load()
+    suffix = f".{config.output_format}"
+    if Path(filename).suffix.lower().lstrip(".") in OUTPUT_FORMATS:
+        filename = str(Path(filename).with_suffix(suffix))
+    filename = FileIOService.sanitize_filename(filename, default_suffix=suffix)
+    dest = Path(directory).expanduser().resolve() / filename
+    sidecar = dest.with_suffix(".json") if config.save_netlist else None
+    if sidecar and input_path and sidecar.resolve() == input_path.expanduser().resolve():
+        sidecar = dest.with_suffix(".netlist.json")
+        if sidecar.resolve() == input_path.expanduser().resolve():
+            screen.set_status("Cannot replace the source netlist.")
+            return
+
+    def save(approved: set[Path]) -> None:
+        try:
+            result = from_netlist(data, style=config.schematic_style(), output_format=config.output_format)
+            schematic = result.encode()
+        except Exception as exc:
+            screen.set_status(f"Could not render schematic: {exc}")
+            return
+
+        ok, message = FileIOService.save_output(schematic, dest, dest in approved)
+        if not ok:
+            screen.set_status(message)
+            return
+
+        notices = []
+        if sidecar:
+            content = json.dumps(data, ensure_ascii=False, indent=2) + "\n"
+            ok, message = FileIOService.save_output(content, sidecar, sidecar in approved)
+            if not ok:
+                notices.append(f"Schematic saved. Could not save JSON: {message}")
+
+        result_screen = RenderSuccessScreen(
+            svg_path=dest,
+            input_source=source_label,
+            components_count=len(result.model.components),
+            nets_count=len(result.model.nets),
+            netlist=data,
+        )
+        if config.auto_open:
+            opened, message = open_file_in_system_viewer(dest)
+            if not opened:
+                notices.append(message)
+        def show_notice() -> None:
+            if notices:
+                result_screen.set_status(" ".join(notices))
+
+        screen.app.push_screen(result_screen)
+        result_screen.call_after_refresh(show_notice)
+
+    targets = [dest] if sidecar is None else [dest, sidecar]
+
+    def confirm(approved: set[Path]) -> None:
+        existing = next((path for path in targets if path.exists() and path not in approved), None)
+        if existing is not None and config.overwrite_confirmation:
+            screen.app.push_screen(
+                OverwriteModal(existing),
+                lambda yes: confirm(approved | {existing}) if yes else None,
+            )
+        else:
+            save(approved if config.overwrite_confirmation else set(targets))
+
+    if not dest.parent.exists():
+        screen.app.push_screen(CreateDirectoryModal(dest.parent), lambda yes: confirm(set()) if yes else None)
+    else:
+        confirm(set())
+
+
 class RenderModeScreen(Screen[None]):
     """R0 — Choose between file input and pasted JSON."""
 
     BINDINGS = [
         Binding("escape", "back_home", "Home", show=False),
-        Binding("ctrl+q", "quit_app", "Quit", show=False, priority=True),
         Binding("q", "quit_app", "Quit", show=False),
     ]
 
@@ -108,7 +186,6 @@ class RenderFileScreen(Screen[None]):
 
     BINDINGS = [
         Binding("escape", "back", "Back", show=False),
-        Binding("ctrl+q", "quit_app", "Quit", show=False, priority=True),
         Binding("q", "quit_app", "Quit", show=False),
         Binding("tab", "toggle_focus", "Toggle Focus", show=False),
     ]
@@ -142,8 +219,8 @@ class RenderFileScreen(Screen[None]):
 
                 yield Static("Filename:", classes="input-field-label")
                 yield EnhancedInput(
-                    placeholder="led.svg",
-                    value="led.svg",
+                    placeholder=f"led.{config.output_format}",
+                    value=f"led.{config.output_format}",
                     id="render-filename",
                 )
 
@@ -151,7 +228,7 @@ class RenderFileScreen(Screen[None]):
 
                 yield SelectableMenu(
                     [
-                        MenuItem("render", "Render schematic", "Generate SVG schematic from selected netlist file"),
+                        MenuItem("render", "Render schematic", "Use the selected JSON file"),
                         MenuItem("browse_file", "Browse for input file", "Open file picker to select a .json netlist"),
                         MenuItem("browse_dir", "Browse for output folder", "Open folder picker to select output directory"),
                         MenuItem("back", "Back", "Return to netlist source selection"),
@@ -211,8 +288,9 @@ class RenderFileScreen(Screen[None]):
                 self.query_one("#render-input-file", EnhancedInput).value = str(picked)
                 # Auto-suggest filename matching stem
                 fn_input = self.query_one("#render-filename", EnhancedInput)
-                if fn_input.value in ("led.svg", "circuit.svg", ""):
-                    fn_input.value = f"{picked.stem}.svg"
+                output_format = ConfigService.load().output_format
+                if fn_input.value in (f"led.{output_format}", f"circuit.{output_format}", ""):
+                    fn_input.value = f"{picked.stem}.{output_format}"
 
         self.app.push_screen(PathPickerModal(initial_path=start_path, mode="file", filters=[".json"]), _on_picked)
 
@@ -259,51 +337,7 @@ class RenderFileScreen(Screen[None]):
             self.set_status(f"× Invalid netlist\n{err_details}")
             return
 
-        dest = FileIOService.resolve_output_path(output_dir_str, filename_str)
-        config = ConfigService.load()
-        status = FileIOService.check_destination(dest, confirm_overwrite=config.overwrite_confirmation)
-
-        if status == "missing_directory":
-            def _on_dir_confirm(created: bool | None) -> None:
-                if created:
-                    FileIOService.ensure_directory(dest.parent)
-                    self._execute_render_save(data, dest, input_path_str)
-            self.app.push_screen(CreateDirectoryModal(dest.parent), _on_dir_confirm)
-            return
-
-        if status == "needs_overwrite_confirm":
-            def _on_overwrite_confirm(confirmed: bool | None) -> None:
-                if confirmed:
-                    self._execute_render_save(data, dest, input_path_str)
-            self.app.push_screen(OverwriteModal(dest), _on_overwrite_confirm)
-            return
-
-        self._execute_render_save(data, dest, input_path_str)
-
-    def _execute_render_save(self, data: dict[str, Any], dest: Path, source_label: str) -> None:
-        try:
-            result = from_netlist(data)
-        except Exception as exc:
-            self.set_status(f"× Engine rendering failed: {exc}")
-            return
-
-        ok, msg = FileIOService.save_svg_safely(result.svg, dest, allow_overwrite=True)
-        if not ok:
-            self.set_status(f"× {msg}")
-            return
-
-        comps_count = len(result.model.components) if result.model else len(data.get("components", []))
-        nets_count = len(result.model.nets) if result.model else len(data.get("nets", []))
-
-        self.app.push_screen(
-            RenderSuccessScreen(
-                svg_path=dest,
-                input_source=source_label,
-                components_count=comps_count,
-                nets_count=nets_count,
-                netlist=data,
-            )
-        )
+        save_render(self, data, output_dir_str, filename_str, input_path_str, input_path=Path(input_path_str))
 
     def action_back(self) -> None:
         self.app.pop_screen()
@@ -321,7 +355,6 @@ class RenderPasteScreen(Screen[None]):
 
     BINDINGS = [
         Binding("escape", "back", "Back", show=False),
-        Binding("ctrl+q", "quit_app", "Quit", show=False, priority=True),
         Binding("q", "quit_app", "Quit", show=False),
         Binding("tab", "toggle_focus", "Toggle Focus", show=False),
     ]
@@ -354,8 +387,8 @@ class RenderPasteScreen(Screen[None]):
 
                 yield Static("Filename:", classes="input-field-label")
                 yield EnhancedInput(
-                    placeholder="circuit.svg",
-                    value="circuit.svg",
+                    placeholder=f"circuit.{config.output_format}",
+                    value=f"circuit.{config.output_format}",
                     id="render-paste-filename",
                 )
 
@@ -363,7 +396,7 @@ class RenderPasteScreen(Screen[None]):
 
                 yield SelectableMenu(
                     [
-                        MenuItem("render", "Render schematic", "Validate and generate SVG schematic from pasted JSON"),
+                        MenuItem("render", "Render schematic", "Use the pasted JSON"),
                         MenuItem("browse_dir", "Browse for output folder", "Open folder picker to select output directory"),
                         MenuItem("clear", "Clear editor", "Clear the JSON editor text"),
                         MenuItem("back", "Back", "Return to netlist source selection"),
@@ -457,51 +490,7 @@ class RenderPasteScreen(Screen[None]):
             self.set_status(f"× Invalid netlist\n{err_details}")
             return
 
-        dest = FileIOService.resolve_output_path(output_dir_str, filename_str)
-        config = ConfigService.load()
-        status = FileIOService.check_destination(dest, confirm_overwrite=config.overwrite_confirmation)
-
-        if status == "missing_directory":
-            def _on_dir_confirm(created: bool | None) -> None:
-                if created:
-                    FileIOService.ensure_directory(dest.parent)
-                    self._execute_render_save(data, dest, "Pasted JSON")
-            self.app.push_screen(CreateDirectoryModal(dest.parent), _on_dir_confirm)
-            return
-
-        if status == "needs_overwrite_confirm":
-            def _on_overwrite_confirm(confirmed: bool | None) -> None:
-                if confirmed:
-                    self._execute_render_save(data, dest, "Pasted JSON")
-            self.app.push_screen(OverwriteModal(dest), _on_overwrite_confirm)
-            return
-
-        self._execute_render_save(data, dest, "Pasted JSON")
-
-    def _execute_render_save(self, data: dict[str, Any], dest: Path, source_label: str) -> None:
-        try:
-            result = from_netlist(data)
-        except Exception as exc:
-            self.set_status(f"× Engine rendering failed: {exc}")
-            return
-
-        ok, msg = FileIOService.save_svg_safely(result.svg, dest, allow_overwrite=True)
-        if not ok:
-            self.set_status(f"× {msg}")
-            return
-
-        comps_count = len(result.model.components) if result.model else len(data.get("components", []))
-        nets_count = len(result.model.nets) if result.model else len(data.get("nets", []))
-
-        self.app.push_screen(
-            RenderSuccessScreen(
-                svg_path=dest,
-                input_source=source_label,
-                components_count=comps_count,
-                nets_count=nets_count,
-                netlist=data,
-            )
-        )
+        save_render(self, data, output_dir_str, filename_str, "Pasted JSON")
 
     def action_back(self) -> None:
         self.app.pop_screen()
@@ -519,7 +508,6 @@ class RenderSuccessScreen(Screen[None]):
 
     BINDINGS = [
         Binding("escape", "back_home", "Home", show=False),
-        Binding("ctrl+q", "quit_app", "Quit", show=False, priority=True),
         Binding("q", "quit_app", "Quit", show=False),
     ]
 
@@ -568,7 +556,7 @@ class RenderSuccessScreen(Screen[None]):
 
                 yield SelectableMenu(
                     [
-                        MenuItem("open", "Open schematic", "Open SVG schematic in default system viewer"),
+                        MenuItem("open", "Open schematic", "Open in the default viewer"),
                         MenuItem("view_netlist", "View netlist", "Inspect the rendered JSON netlist"),
                         MenuItem("render_another", "Render another", "Render another circuit schematic"),
                         MenuItem("home", "Back to home", "Return to the main menu"),
@@ -624,7 +612,6 @@ class ViewNetlistScreen(Screen[None]):
 
     BINDINGS = [
         Binding("escape", "back", "Back", show=False),
-        Binding("ctrl+q", "quit_app", "Quit", show=False, priority=True),
         Binding("q", "quit_app", "Quit", show=False),
     ]
 

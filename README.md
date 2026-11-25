@@ -105,6 +105,43 @@ print(f"Saved schematic to {result.output_path}")
 svg_markup = result.svg
 ```
 
+### Export formats and appearance
+
+SVG is the default, with the same transparent background and styling as earlier
+versions. CircuitGen also exports PNG images and single-page raster PDF files.
+All three formats work offline from a netlist.
+
+```python
+from circuitgen import SchematicStyle, from_netlist, render
+
+style = SchematicStyle(
+    background="white",
+    component_color="#213149",
+    wire_color="#246548",
+    text_color="#17243c",
+    show_component_ids=True,
+    show_component_values=False,
+)
+
+result = from_netlist(netlist, output="circuit.png", style=style)
+result.save("circuit.pdf")
+pdf_bytes = render(netlist, style=style, output_format="pdf")
+```
+
+- `from_netlist()`, `generate()`, and `render()` accept `style=SchematicStyle(...)` and
+  `output_format="svg"`, `"png"`, or `"pdf"`. When saving, CircuitGen infers the
+  format from a recognized filename extension unless you pass `output_format`.
+- `render()` and `CircuitResult.encode()` return SVG as text and PNG or PDF as
+  bytes. `CircuitResult.svg` always contains SVG markup, regardless of the
+  chosen output format.
+- Background accepts `"transparent"`, `"white"`, `"black"`, or a six-digit hex
+  color. Color overrides accept six-digit hex colors. Omitted overrides keep
+  the existing renderer colors. The original `color` and `optimize` arguments
+  still work.
+- Hiding component IDs or values leaves pin labels, net labels, and polarity
+  marks visible. PDF is image-based. Most PDF viewers display transparent
+  areas against a white page.
+
 ### 2. From Natural Language (AI)
 
 Set your provider's API key in your environment first:
@@ -131,6 +168,12 @@ print(result.output_path)
 ```
 
 Supported providers: `gemini`, `openai`, `anthropic`, `deepseek`, `groq`, `mistral`, `xai`, `openrouter`, `together`, `fireworks`, `cerebras`.
+
+`generate()` also accepts `timeout` in seconds, `retry_transient=True` for one
+retry after a temporary failure, and `allow_model_fallback=True` to try the
+same provider's default model when a selected model returns HTTP 404. Retries
+and fallback are opt-in in the Python API. With `clarify=True`, a provider
+request for essential wiring information raises `ClarificationRequired`.
 
 ### 3. Validation
 
@@ -194,6 +237,29 @@ You can define custom ICs or breakout boards by providing an explicit `pins` lis
 ```
 
 *Note: Custom pin lists define logical connection points for the schematic, not physical pin layouts of a specific chip package.*
+
+## Interactive settings
+
+Open **Settings** from Home. Use the arrow keys to highlight a row and Enter
+to toggle it, open its choices, or edit its value. Choose **Save changes**
+to keep your edits. Esc returns to the previous screen. Ctrl+Q exits immediately.
+
+| Category | Options |
+| --- | --- |
+| AI Providers | Choose a provider and enter an exact model ID or use Browse models. A blank model field uses the provider default. CircuitGen checks new manually entered IDs against the provider's model list when you save. Test the connection or manage stored keys here. |
+| Generation | Control same-provider model fallback, one retry for temporary errors, essential clarification questions, and the request timeout. These preferences are saved for the generation workflow. The interactive Generate screen is scheduled for Phase 10. |
+| Output | Choose the output directory and SVG, PNG, or PDF. Control overwrite prompts, opening after save, and saving a JSON copy from Render. |
+| Schematic Preferences | Set the background, component, wire, and text colors. Use the color grid or paste a hex code. Choose whether to show component IDs and values. |
+| Interface | Choose PCB Green, Midnight Blue, Light, Monochrome, Regular terminal, or No color. Reduce motion turns off interface animations. |
+| Reset Settings | Restore defaults after confirmation while keeping stored API keys. |
+| Run Setup Again | Reopen onboarding to revisit the AI provider, key, and model. |
+
+Keys set through environment variables are managed outside CircuitGen. Stored
+keys use the OS credential store. Connection testing checks credentials
+without generating a schematic. It does not establish model access or pricing.
+
+Render saves optional JSON next to the schematic. When that path is the source
+netlist, Render uses `.netlist.json` to avoid replacing the source.
 
 ## Electrical Rule Checking (CLI)
 

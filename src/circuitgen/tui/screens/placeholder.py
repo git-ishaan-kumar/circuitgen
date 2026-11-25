@@ -13,7 +13,6 @@ class PlaceholderScreen(Screen[None]):
 
     BINDINGS = [
         Binding("escape", "back", "Back", show=True, priority=True),
-        Binding("ctrl+q", "quit_app", "Quit", show=True, priority=True),
     ]
 
     def __init__(self, page_name: str, description: str = "") -> None:
@@ -35,6 +34,3 @@ class PlaceholderScreen(Screen[None]):
 
     def action_back(self) -> None:
         self.app.pop_screen()
-
-    def action_quit_app(self) -> None:
-        self.app.action_request_quit()

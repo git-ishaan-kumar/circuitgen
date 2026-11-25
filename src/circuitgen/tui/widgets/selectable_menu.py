@@ -5,6 +5,7 @@ from dataclasses import dataclass
 from typing import Sequence
 
 from rich.text import Text
+from ..themes import palette
 from textual.binding import Binding
 from textual.message import Message
 from textual.widget import Widget
@@ -103,6 +104,8 @@ class SelectableMenu(Widget, can_focus=True):
     def render(self) -> Text:
         """Render visible menu items with scroll indicators when windowed."""
         text = Text()
+        colors = palette(self.app.theme) if self.is_mounted else palette()
+        colors = {name: color.removeprefix("ansi_") for name, color in colors.items()}
         total = len(self.items)
         if not total:
             return text
@@ -116,9 +119,9 @@ class SelectableMenu(Widget, can_focus=True):
         # Top indicator if windowed
         if is_windowed:
             if self.viewport_start > 0:
-                text.append(f"    ▲ ({self.viewport_start} more above)\n", style="italic #9CA3AF")
+                text.append(f"    ▲ ({self.viewport_start} more above)\n", style=f"italic {colors['muted']}")
             else:
-                text.append(f"    • Top of list ({total} total)\n", style="italic #4B5563")
+                text.append(f"    • Top of list ({total} total)\n", style=f"italic {colors['muted']}")
 
         # Dynamic label width based on visible items
         max_lbl = max(len(it.label) for it in visible_items) if visible_items else 12
@@ -128,21 +131,21 @@ class SelectableMenu(Widget, can_focus=True):
             actual_idx = self.viewport_start + idx
             is_active = actual_idx == self.cursor_index
             if is_active:
-                text.append("  ❯ ", style="bold #4ADE80 on #163D2B")
-                text.append(f"{item.label:<{col_width}} ", style="bold #4ADE80 on #163D2B")
-                text.append(f"{item.description}\n", style="#E5E7EB on #163D2B")
+                text.append("  ❯ ", style=f"bold {colors['accent']} on {colors['selection']}")
+                text.append(f"{item.label:<{col_width}} ", style=f"bold {colors['accent']} on {colors['selection']}")
+                text.append(f"{item.description}\n", style=f"{colors['text']} on {colors['selection']}")
             else:
                 text.append("    ", style="default")
-                text.append(f"{item.label:<{col_width}} ", style="#E5E7EB")
-                text.append(f"{item.description}\n", style="#9CA3AF")
+                text.append(f"{item.label:<{col_width}} ", style=colors["text"])
+                text.append(f"{item.description}\n", style=colors["muted"])
 
         # Bottom indicator if windowed
         if is_windowed:
             remaining = total - (self.viewport_start + len(visible_items))
             if remaining > 0:
-                text.append(f"    ▼ ({remaining} more below)\n", style="italic #9CA3AF")
+                text.append(f"    ▼ ({remaining} more below)\n", style=f"italic {colors['muted']}")
             else:
-                text.append(f"    • End of list ({total} total)\n", style="italic #4B5563")
+                text.append(f"    • End of list ({total} total)\n", style=f"italic {colors['muted']}")
 
         # Remove trailing newline for exact height
         if text.plain.endswith("\n"):

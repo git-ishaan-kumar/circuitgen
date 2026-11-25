@@ -8,10 +8,13 @@ from unittest.mock import patch
 from textual.widgets._header import HeaderIcon
 
 from circuitgen.tui.app import CircuitGenApp
+from circuitgen.tui.screens.color_picker import ColorPicker
 from circuitgen.tui.screens.confirm_dialog import QuitModal
 from circuitgen.tui.screens.home import HomeScreen
 from circuitgen.tui.screens.placeholder import PlaceholderScreen
+from circuitgen.tui.screens.settings import SettingsScreen
 from circuitgen.tui.services.config import AppConfig, ConfigService
+from circuitgen.tui.services.credentials import CredentialService
 from circuitgen.tui.widgets.selectable_menu import SelectableMenu
 import pytest
 
@@ -20,7 +23,10 @@ import pytest
 def bypass_onboarding_for_home_tests():
     """Ensure HomeScreen is mounted directly during home screen tests."""
     ConfigService.reset_cache()
-    with patch.object(ConfigService, "load", return_value=AppConfig(onboarding_status="completed")):
+    with (
+        patch.object(ConfigService, "load", return_value=AppConfig(onboarding_status="completed")),
+        patch.object(CredentialService, "is_secure_backend_available", return_value=False),
+    ):
         yield
     ConfigService.reset_cache()
 
@@ -77,8 +83,8 @@ def test_home_status_with_env_key():
                 assert isinstance(app.screen, HomeScreen)
                 status_left = app.screen.query(".status-left").first().render()
                 status_right = app.screen.query(".status-right").first().render()
-                assert "AI: Gemini · Automatic" in str(status_left)
-                assert "Key: Environment" in str(status_right)
+                assert "Provider: Gemini" in str(status_left)
+                assert "Model: gemini-" in str(status_right)
 
     asyncio.run(_run())
 
@@ -183,30 +189,15 @@ def test_q_key_on_home_exits():
     asyncio.run(_run())
 
 
-def test_ctrl_q_from_subpage_opens_quit_modal_and_cancel_retains_subpage():
+@pytest.mark.parametrize("screen_factory", [SettingsScreen, lambda: ColorPicker("Wire color", None), QuitModal])
+def test_ctrl_q_exits_from_subpages_and_modals(screen_factory):
     async def _run():
         app = CircuitGenApp()
-        async with app.run_test(size=(100, 30)) as pilot:
-            # Enter "settings" subpage (which remains a placeholder until Phase 9)
-            await pilot.press("down", "down", "down", "enter")
+        async with app.run_test(size=(80, 24)) as pilot:
+            page = screen_factory()
+            app.push_screen(page)
             await pilot.pause()
-            assert isinstance(app.screen, PlaceholderScreen)
-            assert app.screen.page_name == "Settings"
-
-            # Press Ctrl+Q from subpage opens confirmation modal
-            await pilot.press("ctrl+q")
-            await pilot.pause()
-            assert isinstance(app.screen, QuitModal)
-
-            # Cancel modal with Esc returns to subpage
-            await pilot.press("escape")
-            await pilot.pause()
-            assert isinstance(app.screen, PlaceholderScreen)
-
-            # Re-open modal and pressing ctrl+q confirms quit
-            await pilot.press("ctrl+q")
-            await pilot.pause()
-            assert isinstance(app.screen, QuitModal)
+            assert app.screen is page
             await pilot.press("ctrl+q")
             await pilot.pause()
             assert not app.is_running
@@ -223,14 +214,14 @@ def test_quit_modal_keep_working_selection():
             await pilot.pause()
             assert isinstance(app.screen, PlaceholderScreen)
 
-            # Trigger quit dialog
-            await pilot.press("ctrl+q")
+            await pilot.press("q")
             await pilot.pause()
             assert isinstance(app.screen, QuitModal)
 
             quit_menu = app.screen.query_one(SelectableMenu)
             assert quit_menu.cursor_index == 0
             assert quit_menu.selected_item.key == "keep"
+            assert app.screen.query_one(".keys-reminder").region.y >= quit_menu.region.bottom
 
             # Press Enter on Keep Working -> dismiss modal, remain in subpage
             await pilot.press("enter")

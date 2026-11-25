@@ -55,32 +55,13 @@ class BadProviderResponseError(ProviderError):
     """Provider response could not be parsed as valid JSON."""
 
 
-# ---------------------------------------------------------------------------
-# Recommended Models Policy (§8.1)
-# ---------------------------------------------------------------------------
-
-RECOMMENDED_MODELS: dict[str, str] = {
-    "gemini": "gemini-2.5-flash",
-    "openai": "gpt-4.1-mini",
-    "anthropic": "claude-sonnet-4-5",
-    "deepseek": "deepseek-chat",
-    "groq": "llama-3.3-70b-versatile",
-    "mistral": "mistral-small-latest",
-    "xai": "grok-3-mini",
-    "openrouter": "openai/gpt-4.1-mini",
-    "together": "meta-llama/Llama-3.3-70B-Instruct-Turbo",
-    "fireworks": "accounts/fireworks/models/llama-v3p3-70b-instruct",
-    "cerebras": "llama-3.3-70b",
-}
-
-
 class ModelService:
     """Service for discovering, validating, and selecting provider models."""
 
     @classmethod
     def get_recommended_model(cls, provider_id: str) -> str:
         """Return the tested default model for 'Automatic' policy."""
-        return RECOMMENDED_MODELS.get(provider_id, "default")
+        return PROVIDERS.get(provider_id, {}).get("model", "default")
 
     @classmethod
     def validate_model_id(cls, model_id: str) -> tuple[bool, str]:
@@ -153,28 +134,20 @@ class ModelService:
                 raw_bytes = resp.read()
                 try:
                     data = json.loads(raw_bytes.decode("utf-8"))
-                except Exception as exc:
-                    raise BadProviderResponseError(f"Could not parse model list: {exc}") from exc
+                except (ValueError, UnicodeError):
+                    raise BadProviderResponseError("The provider returned an unreadable model list.") from None
 
-            # Parse provider-specific model listing payloads
-            model_ids: list[str] = []
-            if provider_id == "gemini" and "models" in data:
-                for m in data["models"]:
-                    name = m.get("name", "")
-                    # Gemini names are usually "models/gemini-2.5-flash"
-                    short_name = name.replace("models/", "")
-                    if short_name and short_name not in model_ids:
-                        model_ids.append(short_name)
-            elif "data" in data and isinstance(data["data"], list):
-                for m in data["data"]:
-                    mid = m.get("id")
-                    if mid and mid not in model_ids:
-                        model_ids.append(mid)
-
-            if not model_ids:
-                # Fallback to recommended model if list is empty
-                rec = cls.get_recommended_model(provider_id)
-                model_ids.append(rec)
+            gemini = provider_id == "gemini"
+            entries = data.get("models" if gemini else "data") if isinstance(data, dict) else None
+            if not isinstance(entries, list):
+                raise BadProviderResponseError("The provider returned an unreadable model list.")
+            model_ids = set()
+            for entry in entries:
+                model_id = entry.get("name" if gemini else "id") if isinstance(entry, dict) else None
+                if isinstance(model_id, str):
+                    model_id = model_id.removeprefix("models/") if gemini else model_id
+                    if cls.validate_model_id(model_id)[0]:
+                        model_ids.add(model_id)
 
             return sorted(model_ids)
 
@@ -193,5 +166,5 @@ class ModelService:
                 ) from exc
             raise ProviderError(f"Provider returned HTTP {exc.code} during model discovery.") from exc
 
-        except (urllib.error.URLError, TimeoutError, OSError) as exc:
-            raise NetworkError(f"Network unavailable while discovering models: {exc}") from exc
+        except (urllib.error.URLError, TimeoutError, OSError):
+            raise NetworkError("Network unavailable while discovering models.") from None

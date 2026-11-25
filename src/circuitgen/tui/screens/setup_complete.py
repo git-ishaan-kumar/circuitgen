@@ -21,7 +21,6 @@ class SetupCompleteScreen(Screen[None]):
 
     BINDINGS = [
         Binding("escape", "home", "Home", show=False),
-        Binding("ctrl+q", "quit", "Quit", show=False, priority=True),
         Binding("q", "quit", "Quit", show=False),
     ]
 
@@ -33,6 +32,7 @@ class SetupCompleteScreen(Screen[None]):
         config = ConfigService.load()
         pid = self.provider_id or config.default_provider
         provider_name = PROVIDER_DISPLAY_NAMES.get(pid, pid.title())
+        reopened = any(getattr(screen, "restart", False) for screen in self.app.screen_stack)
 
         # Resolve credential status truthfully
         _, source = CredentialService.resolve_key(pid)
@@ -84,7 +84,7 @@ class SetupCompleteScreen(Screen[None]):
 
                 # Action Menu
                 yield SelectableMenu(
-                    [
+                    [MenuItem("home", "Back to Settings", "")] if reopened else [
                         MenuItem("home", "Go to home", "Open CircuitGen main menu"),
                         MenuItem("generate", "Start generating", "Create a circuit schematic with AI"),
                         MenuItem("settings", "Open settings", "Review preferences and connections"),
@@ -96,7 +96,7 @@ class SetupCompleteScreen(Screen[None]):
                 yield Static("─" * 62, classes="rule")
 
                 yield Static(
-                    "↑↓ Navigate  ·  Enter Select  ·  Esc Home  ·  Ctrl+Q Quit",
+                    f"↑↓ Navigate  ·  Enter Select  ·  Esc {'Settings' if reopened else 'Home'}  ·  Ctrl+Q Quit",
                     classes="keys-reminder",
                 )
 
@@ -106,19 +106,24 @@ class SetupCompleteScreen(Screen[None]):
         config.mark_onboarding_completed()
         ConfigService.save(config)
 
+        if self.app.return_from_reopened_setup():
+            return
         if event.item.key == "home":
             self.app.switch_screen(HomeScreen())
         elif event.item.key == "generate":
             self.app.switch_screen(PlaceholderScreen("CircuitGen / Generate", "Generate workflow coming in Phase 10"))
         elif event.item.key == "settings":
-            self.app.switch_screen(PlaceholderScreen("CircuitGen / Settings", "Full Settings workflow coming in Phase 9"))
+            from .settings import SettingsScreen
+            self.app.switch_screen(HomeScreen())
+            self.app.push_screen(SettingsScreen())
 
     def action_home(self) -> None:
         """Escape goes directly to Home, marking onboarding complete."""
         config = ConfigService.load()
         config.mark_onboarding_completed()
         ConfigService.save(config)
-        self.app.switch_screen(HomeScreen())
+        if not self.app.return_from_reopened_setup():
+            self.app.switch_screen(HomeScreen())
 
     def action_quit(self) -> None:
         """Exit app, preserving completion."""

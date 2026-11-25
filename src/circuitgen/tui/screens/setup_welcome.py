@@ -18,9 +18,12 @@ class SetupWelcomeScreen(Screen[None]):
 
     BINDINGS = [
         Binding("escape", "skip", "Skip", show=False),
-        Binding("ctrl+q", "quit", "Quit", show=False, priority=True),
         Binding("q", "quit", "Quit", show=False),
     ]
+
+    def __init__(self, *, restart: bool = False, **kwargs) -> None:
+        super().__init__(**kwargs)
+        self.restart = restart
 
     def compose(self) -> ComposeResult:
         yield Header(show_clock=False)
@@ -45,7 +48,8 @@ class SetupWelcomeScreen(Screen[None]):
                 yield SelectableMenu(
                     [
                         MenuItem("setup_ai", "Set up AI generation", "Configure your AI provider"),
-                        MenuItem("skip", "Skip for now", "Go directly to Home"),
+                        MenuItem("skip", "Cancel setup" if self.restart else "Skip for now",
+                                 "Return to Settings" if self.restart else "Go directly to Home"),
                     ],
                     initial_index=0,
                     id="setup-menu",
@@ -55,7 +59,7 @@ class SetupWelcomeScreen(Screen[None]):
 
                 # Footer shortcut reminder
                 yield Static(
-                    "↑↓ Navigate  ·  Enter Continue  ·  Esc Skip  ·  Ctrl+Q Quit",
+                    f"↑↓ Navigate  ·  Enter Continue  ·  Esc {'Cancel' if self.restart else 'Skip'}  ·  Ctrl+Q Quit",
                     classes="keys-reminder",
                 )
 
@@ -68,6 +72,9 @@ class SetupWelcomeScreen(Screen[None]):
 
     def action_skip(self) -> None:
         """Mark onboarding as skipped and proceed to Home screen."""
+        if self.restart:
+            self.app.pop_screen()
+            return
         config = ConfigService.load()
         config.mark_onboarding_skipped()
         ConfigService.save(config)

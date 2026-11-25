@@ -16,6 +16,8 @@ from .api import (
     validate,
 )
 from .engine import CircuitError, CircuitModel
+from .ai import ClarificationRequired
+from .export import SchematicStyle
 
 __all__ = [
     "CircuitResult",
@@ -28,4 +30,6 @@ __all__ = [
     "validate",
     "CircuitError",
     "CircuitModel",
+    "SchematicStyle",
+    "ClarificationRequired",
 ]

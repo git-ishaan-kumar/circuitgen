@@ -32,10 +32,12 @@ classifiers = [
     "Operating System :: OS Independent",
 ]
 dependencies = [
-    "textual>=0.85.0",
+    "textual>=8.2.8",
     "rich>=13.0.0",
     "keyring>=24.0.0",
     "platformdirs>=4.0.0",
+    "resvg-py>=0.5.0,<0.6",
+    "Pillow>=11.3",
 ]
 
 [project.scripts]

@@ -108,8 +108,8 @@ class CredentialService:
                 stored_key = keyring.get_password(SERVICE_NAME, provider_id)
                 if stored_key and stored_key.strip():
                     return stored_key.strip(), "keyring"
-            except Exception as exc:
-                logger.warning(f"Error accessing secure keyring for {provider_id}: {exc}")
+            except Exception:
+                logger.warning("Could not read secure storage for %s", provider_id)
 
         return None, "none"
 
@@ -133,8 +133,8 @@ class CredentialService:
 
         try:
             keyring.set_password(SERVICE_NAME, provider_id, clean_key)
-        except Exception as exc:
-            raise RuntimeError(f"Failed to store credential in keyring: {exc}") from None
+        except Exception:
+            raise RuntimeError("Could not save the API key to secure storage.") from None
 
     @classmethod
     def delete_key(cls, provider_id: str) -> bool:
@@ -241,13 +241,9 @@ class CredentialService:
                 "network_error",
                 "! Could not verify the key (network unavailable).\nYou may save it unverified or try again.",
             )
-        except Exception as exc:
-            # Mask any accidental echo of the key in unexpected exceptions
-            err_msg = str(exc)
-            if clean_key in err_msg:
-                err_msg = err_msg.replace(clean_key, "[REDACTED]")
+        except Exception:
             return VerificationResult(
                 False,
                 "network_error",
-                f"! Verification failed: {err_msg}",
+                "! Could not verify the API key.",
             )

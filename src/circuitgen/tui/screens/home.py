@@ -1,9 +1,6 @@
 """Home Screen for CircuitGen interactive TUI (§2.4)."""
 from __future__ import annotations
 
-import os
-
-from rich.text import Text
 from textual.app import ComposeResult
 from textual.binding import Binding
 from textual.containers import Container, Horizontal, Vertical
@@ -19,47 +16,33 @@ from .validate import ValidateModeScreen
 
 MENU_ITEMS = [
     MenuItem("generate", "Generate", "Create a schematic from a description"),
-    MenuItem("render", "Render", "Render a JSON netlist into an SVG"),
+    MenuItem("render", "Render", "Render a JSON netlist as a schematic"),
     MenuItem("validate", "Validate", "Check a JSON netlist for errors"),
     MenuItem("settings", "Settings", "Configure providers and preferences"),
     MenuItem("help", "Help", "Guides, examples, and shortcuts"),
 ]
 
 
-def get_ai_status() -> tuple[str, str, bool]:
-    """Return (left_status, right_status, is_configured) based on environment / configuration."""
-    from circuitgen.ai import PROVIDER_DISPLAY_NAMES, PROVIDERS
-    from circuitgen.tui.services.config import ConfigService
+def get_ai_status() -> tuple[str, str]:
+    from circuitgen.ai import PROVIDER_DISPLAY_NAMES
+    from ..services.config import ConfigService
+    from ..services.credentials import CredentialService
+    from ..services.models import ModelService
 
-    try:
-        config = ConfigService.load()
-        provider_id = config.default_provider
-    except Exception:
-        provider_id = "gemini"
-
-    provider_info = PROVIDERS.get(provider_id, PROVIDERS.get("gemini", {}))
-    env_key_name = provider_info.get("key", "GEMINI_API_KEY")
-    display_name = PROVIDER_DISPLAY_NAMES.get(provider_id, provider_id.title()).replace("Google ", "")
-
-    key_val = os.environ.get(env_key_name, "").strip()
-    if key_val:
-        return f"AI: {display_name} · Automatic", "Key: Environment", True
-
-    # Fallback: check if any provider key is present in environment
-    for p_id, p_info in PROVIDERS.items():
-        k = os.environ.get(p_info.get("key", ""), "").strip()
-        if k:
-            d_name = PROVIDER_DISPLAY_NAMES.get(p_id, p_id.title()).replace("Google ", "")
-            return f"AI: {d_name} · Automatic", "Key: Environment", True
-
-    return "AI: Not configured", "", False
+    config = ConfigService.load()
+    _, source = CredentialService.resolve_key(config.default_provider)
+    if source == "none":
+        return "AI: Not configured", ""
+    provider = PROVIDER_DISPLAY_NAMES[config.default_provider].replace("Google ", "")
+    model = config.explicit_model if config.model_mode == "manual" else None
+    model = model or ModelService.get_recommended_model(config.default_provider)
+    return f"Provider: {provider}", f"Model: {model}"
 
 
 class HomeScreen(Screen[None]):
     """CircuitGen primary Home menu screen."""
 
     BINDINGS = [
-        Binding("ctrl+q", "quit_app", "Quit", show=True, priority=True),
         Binding("q", "quit_app", "Quit", show=False),
         Binding("question_mark", "help", "Help", show=False),
     ]
@@ -89,11 +72,10 @@ class HomeScreen(Screen[None]):
                 yield Static("─" * 62, classes="rule")
 
                 # Status row
-                left_status, right_status, configured = get_ai_status()
+                left_status, right_status = get_ai_status()
                 with Horizontal(id="home-status-row"):
                     yield Static(left_status, classes="status-left")
-                    if right_status:
-                        yield Static(right_status, classes="status-right status-accent")
+                    yield Static(right_status, classes="status-right status-accent", markup=False)
 
                 # Shortcut keys reminder
                 yield Static(
@@ -106,6 +88,13 @@ class HomeScreen(Screen[None]):
     def on_mount(self) -> None:
         self.query_one(SelectableMenu).focus()
 
+    def on_screen_resume(self) -> None:
+        left = self.query(".status-left").first(Static) if self.query(".status-left") else None
+        if left is not None:
+            status, model = get_ai_status()
+            left.update(status)
+            self.query_one(".status-right", Static).update(model)
+
     def on_selectable_menu_selected(self, message: SelectableMenu.Selected) -> None:
         key = message.item.key
         if key == "render":
@@ -114,10 +103,14 @@ class HomeScreen(Screen[None]):
         if key == "validate":
             self.app.push_screen(ValidateModeScreen())
             return
+        if key == "settings":
+            from .settings import SettingsScreen
+            self.app.push_screen(SettingsScreen())
+            return
 
         page_titles = {
             "generate": ("Generate", "Create a schematic from a natural-language description"),
-            "render": ("Render", "Render a JSON netlist into an SVG"),
+            "render": ("Render", "Render a JSON netlist as a schematic"),
             "validate": ("Validate", "Check a JSON netlist for structural/electrical errors"),
             "settings": ("Settings", "Configure providers, preferences, and API keys"),
             "help": ("Help", "Guides, examples, and shortcuts"),
