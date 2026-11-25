@@ -11,6 +11,7 @@ from circuitgen.tui.app import CircuitGenApp
 from circuitgen.tui.screens.color_picker import ColorPicker
 from circuitgen.tui.screens.confirm_dialog import QuitModal
 from circuitgen.tui.screens.home import HomeScreen
+from circuitgen.tui.screens.generate import GenerateScreen
 from circuitgen.tui.screens.placeholder import PlaceholderScreen
 from circuitgen.tui.screens.settings import SettingsScreen
 from circuitgen.tui.services.config import AppConfig, ConfigService
@@ -133,8 +134,7 @@ def test_menu_enter_activates_subpage_and_esc_returns():
             # Press Enter on Generate
             await pilot.press("enter")
             await pilot.pause()
-            assert isinstance(app.screen, PlaceholderScreen)
-            assert app.screen.page_name == "Generate"
+            assert isinstance(app.screen, GenerateScreen)
 
             # Press Esc to return Home
             await pilot.press("escape")
@@ -209,8 +209,7 @@ def test_quit_modal_keep_working_selection():
     async def _run():
         app = CircuitGenApp()
         async with app.run_test(size=(100, 30)) as pilot:
-            # Enter subpage
-            await pilot.press("enter")
+            await pilot.press("up", "enter")
             await pilot.pause()
             assert isinstance(app.screen, PlaceholderScreen)
 

@@ -240,6 +240,18 @@ You can define custom ICs or breakout boards by providing an explicit `pins` lis
 
 ## Interactive settings
 
+To generate a schematic in the TUI, choose **Generate** from Home, enter a
+circuit description, and choose the output directory and filename. Use
+**Change provider / model** to choose a provider for this schematic. After
+saving, **Open schematic** launches your viewer and **View netlist** opens a
+copyable JSON view. Press Esc during generation to return to your draft.
+Generate checks the model list with the active API key before sending the
+description. Use **Browse models** if your configured model is missing from
+that list. A listed model can still be unavailable for a particular request.
+
+Right-click text to copy it. Right-click blank space to paste into the focused
+editable field. API-key fields accept paste and keep their contents masked.
+
 Open **Settings** from Home. Use the arrow keys to highlight a row and Enter
 to toggle it, open its choices, or edit its value. Choose **Save changes**
 to keep your edits. Esc returns to the previous screen. Ctrl+Q exits immediately.
@@ -247,7 +259,7 @@ to keep your edits. Esc returns to the previous screen. Ctrl+Q exits immediately
 | Category | Options |
 | --- | --- |
 | AI Providers | Choose a provider and enter an exact model ID or use Browse models. A blank model field uses the provider default. CircuitGen checks new manually entered IDs against the provider's model list when you save. Test the connection or manage stored keys here. |
-| Generation | Control same-provider model fallback, one retry for temporary errors, essential clarification questions, and the request timeout. These preferences are saved for the generation workflow. The interactive Generate screen is scheduled for Phase 10. |
+| Generation | Control same-provider model fallback, one retry for temporary errors, essential clarification questions, and the request timeout. |
 | Output | Choose the output directory and SVG, PNG, or PDF. Control overwrite prompts, opening after save, and saving a JSON copy from Render. |
 | Schematic Preferences | Set the background, component, wire, and text colors. Use the color grid or paste a hex code. Choose whether to show component IDs and values. |
 | Interface | Choose PCB Green, Midnight Blue, Light, Monochrome, Regular terminal, or No color. Reduce motion turns off interface animations. |

@@ -3,9 +3,13 @@ from __future__ import annotations
 
 from typing import Any
 
+from textual import events
 from textual.app import App
 from textual.binding import Binding
 from textual.filter import NoColor
+from textual.geometry import Offset
+from textual.selection import Selection
+from textual.widgets import Static
 
 from circuitgen import __version__
 from .screens.confirm_dialog import QuitModal
@@ -25,6 +29,7 @@ from .screens.setup_welcome import SetupWelcomeScreen
 from .services.config import AppConfig, ConfigService
 from .clipboard import get_system_clipboard, set_system_clipboard
 from .themes import PALETTES, make_theme, palette
+from .widgets import EnhancedInput, JsonEditor
 
 
 class CircuitGenApp(App[None]):
@@ -81,6 +86,24 @@ class CircuitGenApp(App[None]):
         """Copy text to host system clipboard, app clipboard, and OSC 52 terminal clipboard."""
         set_system_clipboard(text)
         super().copy_to_clipboard(text)
+
+    def on_mouse_down(self, event: events.MouseDown) -> None:
+        if event.button != 3:
+            return
+        widget, offset = self.screen.get_widget_and_offset_at(event.screen_x, event.screen_y)
+        if isinstance(widget, (EnhancedInput, JsonEditor)):
+            return
+        if offset is not None:
+            if isinstance(widget, Static):
+                selection = self.screen.selections.get(widget) or Selection(
+                    Offset(0, offset.y), Offset(0, offset.y + 1),
+                )
+                result = widget.get_selection(selection)
+                if result and result[0].strip():
+                    self.copy_to_clipboard(result[0].rstrip("\n"))
+            return
+        if isinstance(self.focused, (EnhancedInput, JsonEditor)) and not self.focused.disabled:
+            self.focused.action_paste()
 
     def on_mount(self) -> None:
         config = ConfigService.load()

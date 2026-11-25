@@ -66,6 +66,7 @@ class OverwriteModal(ModalScreen[bool]):
             yield Static(
                 f"A file already exists at:\n{self.target_path}\n\nOverwriting will replace its contents.",
                 classes="modal-warning",
+                markup=False,
             )
             yield SelectableMenu(
                 items=[
@@ -75,7 +76,7 @@ class OverwriteModal(ModalScreen[bool]):
                 initial_index=0,
                 id="overwrite-menu",
             )
-            yield Static("↑↓ Navigate  ·  Enter Select  ·  Esc Cancel", classes="status-left")
+            yield Static("↑↓ Navigate  ·  Enter Select  ·  Esc Cancel", classes="keys-reminder")
 
     def on_mount(self) -> None:
         self.query_one(SelectableMenu).focus()
@@ -107,6 +108,7 @@ class CreateDirectoryModal(ModalScreen[bool]):
             yield Static(
                 f"The target folder does not exist:\n{self.target_dir}\n\nCreate this directory now?",
                 classes="modal-warning",
+                markup=False,
             )
             yield SelectableMenu(
                 items=[
@@ -116,7 +118,7 @@ class CreateDirectoryModal(ModalScreen[bool]):
                 initial_index=0,
                 id="create-dir-menu",
             )
-            yield Static("↑↓ Navigate  ·  Enter Select  ·  Esc Cancel", classes="status-left")
+            yield Static("↑↓ Navigate  ·  Enter Select  ·  Esc Cancel", classes="keys-reminder")
 
     def on_mount(self) -> None:
         self.query_one(SelectableMenu).focus()

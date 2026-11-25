@@ -97,6 +97,10 @@ class HomeScreen(Screen[None]):
 
     def on_selectable_menu_selected(self, message: SelectableMenu.Selected) -> None:
         key = message.item.key
+        if key == "generate":
+            from .generate import GenerateScreen
+            self.app.push_screen(GenerateScreen())
+            return
         if key == "render":
             self.app.push_screen(RenderModeScreen())
             return
@@ -109,7 +113,6 @@ class HomeScreen(Screen[None]):
             return
 
         page_titles = {
-            "generate": ("Generate", "Create a schematic from a natural-language description"),
             "render": ("Render", "Render a JSON netlist as a schematic"),
             "validate": ("Validate", "Check a JSON netlist for structural/electrical errors"),
             "settings": ("Settings", "Configure providers, preferences, and API keys"),

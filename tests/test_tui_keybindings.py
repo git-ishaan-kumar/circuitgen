@@ -18,6 +18,7 @@ from circuitgen.tui.clipboard import (
     set_system_clipboard,
 )
 from circuitgen.tui.widgets.enhanced_input import EnhancedInput
+from circuitgen.tui.widgets.json_editor import JsonEditor
 
 
 class KeybindingTestApp(App[None]):
@@ -26,6 +27,56 @@ class KeybindingTestApp(App[None]):
     def compose(self) -> ComposeResult:
         yield EnhancedInput(value="hello world foo", id="test-input")
         yield EnhancedInput(value="sk-proj-12345", password=True, id="password-input")
+        yield JsonEditor(text="first line\n", language=None, id="test-editor")
+
+
+def test_right_click_copies_text_and_pastes_in_blank_space():
+    async def run():
+        app = KeybindingTestApp()
+        async with app.run_test() as pilot:
+            field = app.query_one("#test-input", EnhancedInput)
+            await pilot.click(field, offset=(4, 1), button=3)
+            assert app.clipboard == "hello world foo"
+            field.cursor_position = len(field.value)
+            await pilot.click(field, offset=(30, 1), button=3)
+            assert field.value == "hello world foohello world foo"
+
+            editor = app.query_one(JsonEditor)
+            await pilot.click(editor, offset=(3, 1), button=3)
+            assert app.clipboard == "first line"
+            editor.move_cursor((1, 0))
+            await pilot.click(editor, offset=(25, 2), button=3)
+            assert editor.text == "first line\nfirst line"
+
+            password = app.query_one("#password-input", EnhancedInput)
+            await pilot.click(password, offset=(4, 1), button=3)
+            assert app.clipboard == "first line"
+
+    asyncio.run(run())
+
+
+def test_right_click_on_screen_background_pastes_to_focused_field():
+    from circuitgen.tui.screens.generate import GenerateScreen
+    from circuitgen.tui.services.config import AppConfig, ConfigService
+    from circuitgen.tui.services.credentials import CredentialService
+
+    async def run():
+        app = CircuitGenApp()
+        async with app.run_test(size=(100, 32)) as pilot:
+            app.push_screen(GenerateScreen())
+            await pilot.pause()
+            editor = app.screen.query_one(JsonEditor)
+            editor.focus()
+            app._clipboard = "LED circuit"
+            await pilot.click(offset=(0, 28), button=3)
+            assert editor.text == "LED circuit"
+
+    with (
+        patch.object(ConfigService, "load", return_value=AppConfig(onboarding_status="completed")),
+        patch.object(CredentialService, "resolve_key", return_value=(None, "none")),
+        patch("circuitgen.tui.app.get_system_clipboard", return_value=None),
+    ):
+        asyncio.run(run())
 
 
 def test_enhanced_input_ctrl_a_select_all():

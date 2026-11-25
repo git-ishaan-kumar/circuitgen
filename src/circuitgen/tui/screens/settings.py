@@ -272,9 +272,12 @@ class PreferenceInput(SettingsPage):
 class ProviderSettings(SettingsPage):
     title_text = "Settings / AI Providers"
 
-    def __init__(self) -> None:
+    def __init__(self, draft: AppConfig | None = None) -> None:
         super().__init__()
-        config = ConfigService.load()
+        self.draft = draft
+        config = draft or ConfigService.load()
+        if draft is not None:
+            self.title_text = "Generate / Provider and Model"
         self.provider = config.default_provider
         self.model = config.explicit_model if config.model_mode == "manual" else None
 
@@ -292,7 +295,7 @@ class ProviderSettings(SettingsPage):
         )
         yield Static("", id="key-source", markup=False)
         yield SelectableMenu([
-            MenuItem("save", "Save changes", ""),
+            MenuItem("save", "Use for this schematic" if self.draft is not None else "Save changes", ""),
             MenuItem("discover", "Browse models", ""),
             MenuItem("test", "Test connection", ""),
             MenuItem("key", "Manage API key", ""),
@@ -309,7 +312,7 @@ class ProviderSettings(SettingsPage):
     def on_select_changed(self, event: Select.Changed) -> None:
         if event.value in list_providers() and event.value != self.provider:
             self.provider = str(event.value)
-            config = ConfigService.load()
+            config = self.draft or ConfigService.load()
             self.model = (
                 config.explicit_model
                 if self.provider == config.default_provider and config.model_mode == "manual"
@@ -364,10 +367,18 @@ class ProviderSettings(SettingsPage):
             if model not in models:
                 self.status("The provider did not list that ID. Check it or use Browse models.")
                 return
-        config = replace(ConfigService.load(), default_provider=provider,
+        config = replace(self.draft or ConfigService.load(), default_provider=provider,
                          explicit_model=model or None, model_mode="manual" if model else "automatic")
-        if self.save(config):
+        if self.draft is not None:
+            self.dismiss(config)
+        elif self.save(config):
             self.action_back()
+
+    def action_back(self) -> None:
+        if self.draft is not None:
+            self.dismiss(None)
+        else:
+            super().action_back()
 
     @work(exclusive=True, group="provider-request")
     async def _check_provider(self, provider: str, action: str) -> None:

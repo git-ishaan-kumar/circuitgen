@@ -386,3 +386,43 @@ ConfirmSettings {
     width: 24;
     height: 10;
 }
+
+#generate-description {
+    height: 6;
+}
+
+#generate-provider {
+    color: $cg-muted;
+    margin-top: 1;
+}
+
+GenerationProgress {
+    background: $cg-background;
+}
+
+#generation-progress {
+    height: 3;
+    width: 100%;
+}
+
+.generation-checkpoint {
+    width: 1fr;
+    height: 3;
+    border: solid $cg-border;
+    background: $cg-surface;
+    color: $cg-muted;
+    content-align: center middle;
+}
+
+.generation-checkpoint.current {
+    border: solid $cg-accent;
+    color: $cg-accent;
+    text-style: bold;
+}
+
+.generation-checkpoint.complete {
+    border: solid $cg-accent;
+    background: $cg-accent;
+    color: $cg-background;
+    text-style: bold;
+}

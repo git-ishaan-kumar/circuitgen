@@ -13,11 +13,28 @@ Provides:
 from __future__ import annotations
 
 import re
+from textual import events
 from textual.binding import Binding
 from textual.widgets import Input
 
 
 class EnhancedInput(Input):
+    async def _on_mouse_down(self, event: events.MouseDown) -> None:
+        if event.button != 3:
+            await super()._on_mouse_down(event)
+            return
+        event.stop()
+        if self.disabled:
+            return
+        offset = event.get_content_offset(self)
+        if (
+            offset is not None and not self.password and self.value
+            and self._cell_offset_to_index(offset.x) < len(self.value)
+        ):
+            self.action_copy()
+        else:
+            self.action_paste()
+
     """An Input widget with desktop-grade editing keybindings and system clipboard integration."""
 
     BINDINGS = [

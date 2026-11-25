@@ -11,7 +11,7 @@ import re
 import urllib.error
 import urllib.request
 import urllib.parse
-from typing import Any
+from typing import Any, Callable
 
 from .engine import CircuitError
 
@@ -312,6 +312,7 @@ def generate_netlist(
     retry_transient: bool = False,
     allow_model_fallback: bool = False,
     clarify: bool = False,
+    on_model: Callable[[str], None] | None = None,
 ) -> dict[str, Any]:
     """Generate a JSON netlist using the selected AI provider.
 
@@ -373,9 +374,13 @@ def generate_netlist(
         raw = request(chosen_model)
     except ProviderRequestError as exc:
         if allow_model_fallback and exc.status == 404 and chosen_model != settings["model"]:
-            raw = request(settings["model"])
+            chosen_model = settings["model"]
+            raw = request(chosen_model)
         elif retry_transient and exc.transient:
             raw = request(chosen_model)
         else:
             raise
-    return _parse_netlist(raw, provider, clarify=clarify)
+    netlist = _parse_netlist(raw, provider, clarify=clarify)
+    if on_model is not None:
+        on_model(chosen_model)
+    return netlist

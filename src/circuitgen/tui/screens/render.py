@@ -1,13 +1,15 @@
 """Render workflow screens: R0 (mode selection), R1a (file), R1b (paste), success, and netlist viewer."""
 from __future__ import annotations
 
+import asyncio
 import json
 import os
 import subprocess
 import sys
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 
+from textual import work
 from textual.app import ComposeResult
 from textual.binding import Binding
 from textual.containers import Container, Horizontal, Vertical
@@ -45,6 +47,59 @@ def open_file_in_system_viewer(path: Path) -> tuple[bool, str]:
 # R0 — Choose Input Mode
 # ---------------------------------------------------------------------------
 
+def schematic_path(directory: str, filename: str, output_format: str) -> Path:
+    suffix = f".{output_format}"
+    if Path(filename).suffix.lower().lstrip(".") in OUTPUT_FORMATS:
+        filename = str(Path(filename).with_suffix(suffix))
+    filename = FileIOService.sanitize_filename(filename, default_suffix=suffix)
+    return Path(directory).expanduser().resolve() / filename
+
+
+def confirm_output(screen: Screen, targets: list[Path], overwrite: bool,
+                   proceed: Callable[[set[Path]], None]) -> None:
+    directory = targets[0].parent
+    try:
+        for parent in (directory, *directory.parents):
+            if parent.exists() and not parent.is_dir():
+                screen.set_status(f"A file is blocking the output folder: {parent}")
+                return
+        for target in targets:
+            if target.is_dir():
+                screen.set_status(f"The output filename is already a folder: {target}")
+                return
+    except OSError:
+        screen.set_status("Could not access the output folder.")
+        return
+
+    def confirm(approved: set[Path]) -> None:
+        existing = next((path for path in targets if path.exists() and path not in approved), None)
+        if existing is not None and overwrite:
+            screen.app.push_screen(
+                OverwriteModal(existing),
+                lambda yes: confirm(approved | {existing}) if yes else None,
+            )
+        else:
+            proceed(approved if overwrite else set(targets))
+
+    if not directory.exists():
+        screen.app.push_screen(CreateDirectoryModal(directory), lambda yes: confirm(set()) if yes else None)
+    else:
+        confirm(set())
+
+
+def write_outputs(schematic: str | bytes, dest: Path, data: dict[str, Any],
+                  sidecar: Path | None, approved: set[Path]) -> tuple[bool, str]:
+    ok, message = FileIOService.save_output(schematic, dest, dest in approved)
+    if not ok:
+        return False, message
+    if sidecar:
+        content = json.dumps(data, ensure_ascii=False, indent=2) + "\n"
+        ok, message = FileIOService.save_output(content, sidecar, sidecar in approved)
+        if not ok:
+            return True, f"Schematic saved. Could not save JSON: {message}"
+    return True, ""
+
+
 def save_render(
     screen: RenderFileScreen | RenderPasteScreen,
     data: dict[str, Any],
@@ -55,11 +110,11 @@ def save_render(
     input_path: Path | None = None,
 ) -> None:
     config = ConfigService.load()
-    suffix = f".{config.output_format}"
-    if Path(filename).suffix.lower().lstrip(".") in OUTPUT_FORMATS:
-        filename = str(Path(filename).with_suffix(suffix))
-    filename = FileIOService.sanitize_filename(filename, default_suffix=suffix)
-    dest = Path(directory).expanduser().resolve() / filename
+    try:
+        dest = schematic_path(directory, filename, config.output_format)
+    except (OSError, ValueError):
+        screen.set_status("Enter a valid output directory and filename.")
+        return
     sidecar = dest.with_suffix(".json") if config.save_netlist else None
     if sidecar and input_path and sidecar.resolve() == input_path.expanduser().resolve():
         sidecar = dest.with_suffix(".netlist.json")
@@ -75,17 +130,11 @@ def save_render(
             screen.set_status(f"Could not render schematic: {exc}")
             return
 
-        ok, message = FileIOService.save_output(schematic, dest, dest in approved)
+        ok, message = write_outputs(schematic, dest, data, sidecar, approved)
         if not ok:
             screen.set_status(message)
             return
-
-        notices = []
-        if sidecar:
-            content = json.dumps(data, ensure_ascii=False, indent=2) + "\n"
-            ok, message = FileIOService.save_output(content, sidecar, sidecar in approved)
-            if not ok:
-                notices.append(f"Schematic saved. Could not save JSON: {message}")
+        notices = [message] if message else []
 
         result_screen = RenderSuccessScreen(
             svg_path=dest,
@@ -105,22 +154,8 @@ def save_render(
         screen.app.push_screen(result_screen)
         result_screen.call_after_refresh(show_notice)
 
-    targets = [dest] if sidecar is None else [dest, sidecar]
-
-    def confirm(approved: set[Path]) -> None:
-        existing = next((path for path in targets if path.exists() and path not in approved), None)
-        if existing is not None and config.overwrite_confirmation:
-            screen.app.push_screen(
-                OverwriteModal(existing),
-                lambda yes: confirm(approved | {existing}) if yes else None,
-            )
-        else:
-            save(approved if config.overwrite_confirmation else set(targets))
-
-    if not dest.parent.exists():
-        screen.app.push_screen(CreateDirectoryModal(dest.parent), lambda yes: confirm(set()) if yes else None)
-    else:
-        confirm(set())
+    targets = [dest, sidecar] if sidecar else [dest]
+    confirm_output(screen, targets, config.overwrite_confirmation, save)
 
 
 class RenderModeScreen(Screen[None]):
@@ -518,6 +553,9 @@ class RenderSuccessScreen(Screen[None]):
         components_count: int,
         nets_count: int,
         netlist: dict[str, Any],
+        *,
+        ai_source: tuple[str, str] | None = None,
+        another: Callable[[], None] | None = None,
         **kwargs,
     ) -> None:
         super().__init__(**kwargs)
@@ -526,25 +564,34 @@ class RenderSuccessScreen(Screen[None]):
         self.components_count = components_count
         self.nets_count = nets_count
         self.netlist = netlist
+        self.ai_source = ai_source
+        self.another = another
 
     def compose(self) -> ComposeResult:
         yield Header(show_clock=False)
         with Container(id="home-container"):
             with Vertical(id="home-card"):
                 with Horizontal(classes="breadcrumb-row"):
-                    yield Static("CircuitGen / Render", classes="breadcrumb-left")
+                    workflow = "Generate" if self.ai_source else "Render"
+                    yield Static(f"CircuitGen / {workflow}", classes="breadcrumb-left")
                     yield Static("Success", classes="breadcrumb-right")
 
                 yield Static("─" * 62, classes="rule")
-                yield Static("✓ Schematic rendered successfully", classes="setup-title")
+                title = "Schematic generated and saved" if self.ai_source else "Schematic rendered successfully"
+                yield Static(f"✓ {title}", classes="setup-title")
 
                 with Vertical(classes="summary-card"):
                     with Horizontal(classes="summary-row"):
                         yield Static("File", classes="summary-label")
-                        yield Static(str(self.svg_path), classes="summary-value")
-                    with Horizontal(classes="summary-row"):
-                        yield Static("Input", classes="summary-label")
-                        yield Static(self.input_source, classes="summary-value")
+                        yield Static(str(self.svg_path), classes="summary-value", markup=False)
+                    source = (
+                        list(zip(("Provider", "Model"), self.ai_source))
+                        if self.ai_source else [("Input", self.input_source)]
+                    )
+                    for label, value in source:
+                        with Horizontal(classes="summary-row"):
+                            yield Static(label, classes="summary-label")
+                            yield Static(value, classes="summary-value", markup=False)
                     with Horizontal(classes="summary-row"):
                         yield Static("Components", classes="summary-label")
                         yield Static(str(self.components_count), classes="summary-value")
@@ -552,13 +599,13 @@ class RenderSuccessScreen(Screen[None]):
                         yield Static("Nets", classes="summary-label")
                         yield Static(str(self.nets_count), classes="summary-value")
 
-                yield Static("", id="render-success-status", classes="status-message")
+                yield Static("", id="render-success-status", classes="status-message", markup=False)
 
                 yield SelectableMenu(
                     [
                         MenuItem("open", "Open schematic", "Open in the default viewer"),
                         MenuItem("view_netlist", "View netlist", "Inspect the rendered JSON netlist"),
-                        MenuItem("render_another", "Render another", "Render another circuit schematic"),
+                        MenuItem("render_another", f"{workflow} another", ""),
                         MenuItem("home", "Back to home", "Return to the main menu"),
                     ],
                     initial_index=0,
@@ -574,6 +621,17 @@ class RenderSuccessScreen(Screen[None]):
     def on_mount(self) -> None:
         self.query_one("#render-success-menu", SelectableMenu).focus()
 
+    def show_saved_status(self, message: str, auto_open: bool) -> None:
+        self.set_status(message)
+        if auto_open:
+            self._open_schematic(message)
+
+    @work(exclusive=True)
+    async def _open_schematic(self, message: str = "") -> None:
+        ok, error = await asyncio.to_thread(open_file_in_system_viewer, self.svg_path)
+        status = "Opened schematic." if ok else error
+        self.set_status(" ".join(filter(None, (message, status))))
+
     def set_status(self, msg: str) -> None:
         try:
             self.query_one("#render-success-status", Static).update(msg)
@@ -583,21 +641,23 @@ class RenderSuccessScreen(Screen[None]):
     def on_selectable_menu_selected(self, message: SelectableMenu.Selected) -> None:
         key = message.item.key
         if key == "open":
-            ok, err = open_file_in_system_viewer(self.svg_path)
-            if ok:
-                self.set_status("✓ Opened schematic in system viewer.")
-            else:
-                self.set_status(f"! {err}")
+            self._open_schematic()
         elif key == "view_netlist":
             self.app.push_screen(ViewNetlistScreen(netlist=self.netlist, source_file=self.svg_path.stem))
         elif key == "render_another":
-            self.app.push_screen(RenderModeScreen())
+            if self.another is not None:
+                self.another()
+            else:
+                self.app.push_screen(RenderModeScreen())
         elif key == "home":
             self.action_back_home()
 
     def action_back_home(self) -> None:
         from circuitgen.tui.screens.home import HomeScreen
-        self.app.push_screen(HomeScreen())
+        if self.ai_source:
+            self.app.pop_screen()
+        else:
+            self.app.push_screen(HomeScreen())
 
     def action_quit_app(self) -> None:
         self.app.exit()

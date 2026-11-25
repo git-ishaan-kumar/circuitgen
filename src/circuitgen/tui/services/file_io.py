@@ -81,14 +81,14 @@ class FileIOService:
         except Exception as exc:
             return None, f"Invalid file path: {exc}", None
 
-        if not target.exists():
-            return None, f"File not found: {target}", None
-
-        if not target.is_file():
-            return None, f"Path is not a regular file: {target}", None
-
         try:
+            if not target.exists():
+                return None, f"File not found: {target}", None
+            if not target.is_file():
+                return None, f"Path is not a regular file: {target}", None
             content = target.read_text(encoding="utf-8")
+        except FileNotFoundError:
+            return None, f"File not found: {target}", None
         except PermissionError:
             return None, f"Permission denied reading file: {target}", None
         except UnicodeDecodeError:

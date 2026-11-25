@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from typing import Any
+from textual import events
 from textual.binding import Binding
 from textual.widgets import TextArea
 
@@ -45,6 +46,21 @@ class JsonEditor(TextArea):
     def action_select_all(self) -> None:
         """Select all text in the editor."""
         self.select_all()
+
+    async def _on_mouse_down(self, event: events.MouseDown) -> None:
+        if event.button != 3:
+            await super()._on_mouse_down(event)
+            return
+        event.stop()
+        if self.disabled:
+            return
+        if event.get_content_offset(self) is not None:
+            row, column = self.get_target_document_location(event)
+            line = self.document.get_line(row)
+            if column < len(line):
+                self.app.copy_to_clipboard(self.selected_text or line)
+                return
+        self.action_paste()
 
     def validate_netlist(self) -> tuple[dict[str, Any] | None, str | None, tuple[int, int] | None]:
         """Validate the editor contents as a valid JSON netlist.

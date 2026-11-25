@@ -102,9 +102,8 @@ class ModelService:
         clean_key = api_key.strip()
         try:
             if provider_id == "gemini":
-                safe_key = urllib.parse.quote(clean_key, safe="")
-                url = f"https://generativelanguage.googleapis.com/v1beta/models?key={safe_key}"
-                req = urllib.request.Request(url, headers={"User-Agent": "CircuitGen/0.1"})
+                url = "https://generativelanguage.googleapis.com/v1beta/models"
+                req = urllib.request.Request(url, headers={"x-goog-api-key": clean_key})
             elif provider_id == "anthropic":
                 url = "https://api.anthropic.com/v1/models"
                 req = urllib.request.Request(
@@ -116,12 +115,16 @@ class ModelService:
                     },
                 )
             else:
-                provider_settings = PROVIDERS.get(provider_id, {})
-                base_url = provider_settings.get("url", "https://api.openai.com/v1/chat/completions")
+                provider_settings = PROVIDERS.get(provider_id)
+                if provider_settings is None:
+                    raise ProviderError("Unknown AI provider.")
+                base_url = provider_settings["url"]
                 if "/chat/completions" in base_url:
                     url = base_url.replace("/chat/completions", "/models")
                 else:
                     url = base_url
+                if provider_id == "openrouter":
+                    url += "/user"
                 req = urllib.request.Request(
                     url,
                     headers={
@@ -130,25 +133,67 @@ class ModelService:
                     },
                 )
 
-            with urllib.request.urlopen(req, timeout=timeout) as resp:
-                raw_bytes = resp.read()
-                try:
-                    data = json.loads(raw_bytes.decode("utf-8"))
-                except (ValueError, UnicodeError):
-                    raise BadProviderResponseError("The provider returned an unreadable model list.") from None
-
             gemini = provider_id == "gemini"
-            entries = data.get("models" if gemini else "data") if isinstance(data, dict) else None
-            if not isinstance(entries, list):
-                raise BadProviderResponseError("The provider returned an unreadable model list.")
+            openrouter_offset = 0
+            if provider_id == "openrouter":
+                req = urllib.request.Request(f"{url}?limit=100", headers=dict(req.header_items()))
             model_ids = set()
-            for entry in entries:
-                model_id = entry.get("name" if gemini else "id") if isinstance(entry, dict) else None
-                if isinstance(model_id, str):
-                    model_id = model_id.removeprefix("models/") if gemini else model_id
-                    if cls.validate_model_id(model_id)[0]:
-                        model_ids.add(model_id)
+            seen = set()
+            for _ in range(50):
+                with urllib.request.urlopen(req, timeout=timeout) as resp:
+                    try:
+                        data = json.loads(resp.read().decode("utf-8"))
+                    except ValueError:
+                        raise BadProviderResponseError("The provider returned an unreadable model list.") from None
 
+                entries = data.get("models" if gemini else "data") if isinstance(data, dict) else None
+                if not isinstance(entries, list):
+                    raise BadProviderResponseError("The provider returned an unreadable model list.")
+                for entry in entries:
+                    if not isinstance(entry, dict):
+                        continue
+                    if entry.get("supports_chat") is False or entry.get("kind") == "EMBEDDING_MODEL":
+                        continue
+                    methods = entry.get("supportedGenerationMethods")
+                    if gemini and methods is not None and (
+                        not isinstance(methods, list) or "generateContent" not in methods
+                    ):
+                        continue
+                    architecture = entry.get("architecture")
+                    if isinstance(architecture, dict):
+                        inputs = architecture.get("input_modalities")
+                        outputs = architecture.get("output_modalities")
+                        if any(isinstance(values, list) and "text" not in values for values in (inputs, outputs)):
+                            continue
+                    model_id = entry.get("name" if gemini else "id")
+                    if isinstance(model_id, str):
+                        model_id = model_id.removeprefix("models/") if gemini else model_id
+                        if cls.validate_model_id(model_id)[0]:
+                            model_ids.add(model_id)
+
+                if gemini:
+                    parameter, cursor = "pageToken", data.get("nextPageToken")
+                elif provider_id == "anthropic" and data.get("has_more"):
+                    parameter, cursor = "after_id", data.get("last_id")
+                    if not cursor:
+                        raise BadProviderResponseError("The provider returned an incomplete model list.")
+                elif provider_id == "openrouter" and len(entries) >= 100:
+                    openrouter_offset += len(entries)
+                    req = urllib.request.Request(
+                        f"{url}?limit=100&offset={openrouter_offset}", headers=dict(req.header_items()),
+                    )
+                    continue
+                else:
+                    break
+                if not cursor:
+                    break
+                if not isinstance(cursor, str) or cursor in seen:
+                    raise BadProviderResponseError("The provider returned an incomplete model list.")
+                seen.add(cursor)
+                query = urllib.parse.urlencode({parameter: cursor})
+                req = urllib.request.Request(f"{url}?{query}", headers=dict(req.header_items()))
+            else:
+                raise BadProviderResponseError("The provider model list exceeded the page limit.")
             return sorted(model_ids)
 
         except urllib.error.HTTPError as exc:
@@ -164,6 +209,8 @@ class ModelService:
                 raise RateLimitedError(
                     f"Rate limit exceeded while querying models from {provider_id}."
                 ) from exc
+            if exc.code == 503:
+                raise ProviderError("Model discovery is temporarily unavailable (HTTP 503).") from None
             raise ProviderError(f"Provider returned HTTP {exc.code} during model discovery.") from exc
 
         except (urllib.error.URLError, TimeoutError, OSError):

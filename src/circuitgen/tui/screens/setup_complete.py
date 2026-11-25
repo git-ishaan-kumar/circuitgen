@@ -9,7 +9,6 @@ from textual.widgets import Header, Static
 
 from circuitgen.ai import PROVIDER_DISPLAY_NAMES
 from circuitgen.tui.screens.home import HomeScreen
-from circuitgen.tui.screens.placeholder import PlaceholderScreen
 from circuitgen.tui.services.config import ConfigService
 from circuitgen.tui.services.credentials import CredentialService
 from circuitgen.tui.services.models import ModelService
@@ -111,7 +110,9 @@ class SetupCompleteScreen(Screen[None]):
         if event.item.key == "home":
             self.app.switch_screen(HomeScreen())
         elif event.item.key == "generate":
-            self.app.switch_screen(PlaceholderScreen("CircuitGen / Generate", "Generate workflow coming in Phase 10"))
+            from .generate import GenerateScreen
+            self.app.switch_screen(HomeScreen())
+            self.app.push_screen(GenerateScreen())
         elif event.item.key == "settings":
             from .settings import SettingsScreen
             self.app.switch_screen(HomeScreen())

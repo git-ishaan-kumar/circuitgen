@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import os
 import tempfile
 import urllib.error
@@ -131,6 +132,26 @@ class TestModelServiceUnit:
             with pytest.raises(NetworkError) as exc_info:
                 ModelService.discover_models("gemini")
             assert "Network unavailable" in str(exc_info.value)
+
+    def test_gemini_follows_pages_and_filters_generation_methods(self):
+        pages = [
+            {"models": [{"name": "models/embedding", "supportedGenerationMethods": ["embedContent"]}],
+             "nextPageToken": "page-2"},
+            {"models": [{"name": "models/chat", "supportedGenerationMethods": ["generateContent"]}]},
+        ]
+        responses = []
+        for page in pages:
+            response = MagicMock()
+            response.__enter__.return_value = response
+            response.read.return_value = json.dumps(page).encode()
+            responses.append(response)
+
+        with patch("urllib.request.urlopen", side_effect=responses) as open_url:
+            assert ModelService.discover_models("gemini", api_key="test-key") == ["chat"]
+        requests = [call.args[0] for call in open_url.call_args_list]
+        assert "pageToken=page-2" in requests[1].full_url
+        assert all("test-key" not in request.full_url for request in requests)
+        assert all(request.get_header("X-goog-api-key") == "test-key" for request in requests)
 
     def test_discover_models_auth_failure(self, fake_keyring):
         CredentialService.save_key("gemini", "dummy-key")

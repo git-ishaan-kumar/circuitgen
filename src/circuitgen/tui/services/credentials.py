@@ -4,7 +4,6 @@ from __future__ import annotations
 import logging
 import os
 import urllib.error
-import urllib.parse
 import urllib.request
 from dataclasses import dataclass
 from typing import Any
@@ -181,9 +180,8 @@ class CredentialService:
         # Construct verification request
         try:
             if provider_id == "gemini":
-                safe_key = urllib.parse.quote(clean_key, safe="")
-                url = f"https://generativelanguage.googleapis.com/v1beta/models?key={safe_key}"
-                req = urllib.request.Request(url, headers={"User-Agent": "CircuitGen/0.1"})
+                url = "https://generativelanguage.googleapis.com/v1beta/models"
+                req = urllib.request.Request(url, headers={"x-goog-api-key": clean_key})
             elif provider_id == "anthropic":
                 url = "https://api.anthropic.com/v1/models"
                 req = urllib.request.Request(
@@ -202,6 +200,8 @@ class CredentialService:
                     url = base_url.replace("/chat/completions", "/models")
                 else:
                     url = base_url
+                if provider_id == "openrouter":
+                    url = "https://openrouter.ai/api/v1/key"
                 req = urllib.request.Request(
                     url,
                     headers={
