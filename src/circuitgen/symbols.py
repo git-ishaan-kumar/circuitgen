@@ -67,6 +67,7 @@ BUILTIN_SYMBOLS: dict[str, SymbolSpec] = {
         "resistor", "capacitor", "inductor", "diode", "led", "switch", "lamp", "fuse"
     )},
     **{kind: _source(kind, kind) for kind in ("battery", "dc_source", "ac_source", "current_source")},
+    "ground": SymbolSpec("ground", "ground", (PinSpec("gnd", 0, -2),), 0.7, 0.65),
     "npn": SymbolSpec("npn", "npn", (PinSpec("C", 1, -2), PinSpec("B", -2, 0), PinSpec("E", 1, 2))),
     "pnp": SymbolSpec("pnp", "pnp", (PinSpec("C", 1, -2), PinSpec("B", -2, 0), PinSpec("E", 1, 2))),
     "nmos": SymbolSpec("nmos", "nmos", (PinSpec("G", -2, 0), PinSpec("D", 1, -2), PinSpec("S", 1, 2))),
@@ -103,7 +104,11 @@ def get_symbol(kind: str, pins: Sequence[str] | None = None) -> SymbolSpec:
         raise ValueError("Invalid pin name")
     if len(set(pins)) != len(pins):
         raise ValueError("Duplicate pin name")
-    if kind in BUILTIN_SYMBOLS:
+    if kind == "ground" and len(pins) == 1:
+        spec = BUILTIN_SYMBOLS[kind]
+        pin = dataclasses.replace(spec.pins[0], name=pins[0])
+        return dataclasses.replace(spec, pins=(pin,))
+    if kind in BUILTIN_SYMBOLS and kind != "ground":
         spec = BUILTIN_SYMBOLS[kind]
         if set(pins) != set(spec.pin_names):
             raise ValueError(f"Pin list for {kind} must match its registered symbol")
@@ -172,6 +177,11 @@ def _local_art(symbol: SymbolSpec, visible_pins: frozenset[str] | None = None) -
                 line(px, py, px, -h)
             elif py > h:
                 line(px, h, px, py)
+    elif k == "ground":
+        line(0, -2, 0, -0.4)
+        line(-0.60, -0.4, 0.60, -0.4)
+        line(-0.42, 0, 0.42, 0)
+        line(-0.22, 0.4, 0.22, 0.4)
     elif k in ("battery", "dc_source", "ac_source", "current_source"):
         line(0, -2, 0, -1)
         line(0, 1, 0, 2)

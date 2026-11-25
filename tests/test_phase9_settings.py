@@ -35,7 +35,7 @@ def test_style_overrides_preserve_default_output():
     svg = from_netlist(data, style=style).svg
     assert 'height="100%" fill="white"' in svg
     assert ".symbol,.fill{stroke:#123456}" in svg
-    assert ".wire,.ground-mark,.power-mark{stroke:#334455}" in svg
+    assert ".wire{stroke:#334455}" in svg
     assert "fill:#440022" in svg
     assert ".name,.label{display:none}" in svg
     assert '<text class="value"' not in svg

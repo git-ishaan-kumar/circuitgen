@@ -97,10 +97,13 @@ class TestHistoricMotifs(unittest.TestCase):
                 net['pins'].reverse()
             self.assertEqual(make_svg_from_netlist(raw), make_svg_from_netlist(modified))
 
-    def test_existing_controller_output_identical(self):
+    def test_controller_uses_general_wire_renderer(self):
         output = make_svg_from_netlist(self.controller)
-        digest = hashlib.sha256(output.encode('utf-8')).hexdigest()
-        self.assertEqual(digest, 'ce873349c6e80b477772cdf71ed399576edc2ca59e12685cfa74ef04fb7e82b9')
+        self.assertIn("CircuitGen routed schematic", output)
+        self.assertNotIn('data-motif=', output)
+        self.assertNotIn('class="ground-mark"', output)
+        self.assertNotIn('class="power-mark"', output)
+        self.assertNotIn('class="netlabel"', output)
 
     def test_existing_simple_output_identical(self):
         raw = {

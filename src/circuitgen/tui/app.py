@@ -3,6 +3,7 @@ from __future__ import annotations
 
 from typing import Any
 
+from rich.traceback import Traceback
 from textual import events
 from textual.app import App
 from textual.binding import Binding
@@ -55,6 +56,11 @@ class CircuitGenApp(App[None]):
 
     def get_theme_variable_defaults(self) -> dict[str, str]:
         return {f"cg-{name}": value for name, value in palette().items()}
+
+    def _fatal_error(self) -> None:
+        # Worker frames can contain API keys.
+        self.bell()
+        self.panic(Traceback(show_locals=False, width=None))
 
     def apply_preferences(self, config: AppConfig) -> None:
         self.animation_level = "none" if config.reduced_motion else self._reduced_motion_default

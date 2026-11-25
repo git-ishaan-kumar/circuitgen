@@ -87,6 +87,8 @@ def test_generate_saves_and_opens_netlist(config, tmp_path):
 
     with (
         patch("circuitgen.tui.screens.generate.generate_netlist", side_effect=mock_netlist) as request,
+        patch.object(CircuitGenApp, "wait_for_refresh",
+                     side_effect=AssertionError("App message pump has no task")),
         patch("circuitgen.tui.screens.render.open_file_in_system_viewer", return_value=(True, "")) as viewer,
         patch.object(CircuitGenApp, "copy_to_clipboard") as copy,
     ):
@@ -96,6 +98,25 @@ def test_generate_saves_and_opens_netlist(config, tmp_path):
     assert json.loads((tmp_path / "led.json").read_text(encoding="utf-8")) == mock_netlist()
     viewer.assert_called_once_with(tmp_path / "led.svg")
     assert json.loads(copy.call_args.args[0]) == mock_netlist()
+
+
+def test_fatal_traceback_omits_local_values():
+    app = CircuitGenApp()
+
+    def crash(api_key):
+        with patch.object(app, "bell"), patch.object(app, "_close_messages_no_wait"):
+            try:
+                raise RuntimeError("Unexpected worker failure")
+            except RuntimeError:
+                app._fatal_error()
+
+    api_key = "synthetic-local-credential"
+    crash(api_key)
+
+    report = "".join(segment.text for renderable in app._exit_renderables
+                     for segment in app.console.render(renderable))
+    assert "Unexpected worker failure" in report
+    assert api_key not in report
 
 
 def test_cancel_delayed_generation_preserves_draft(config, tmp_path):

@@ -1,7 +1,6 @@
 """Phase 6 tests: conservative, opt-in layout optimization."""
 
 import copy
-import hashlib
 import json
 import unittest
 import xml.etree.ElementTree as ET
@@ -61,13 +60,13 @@ class TestLayoutOptimization(unittest.TestCase):
                 self.assertEqual(make_routed_svg_from_netlist(raw),
                                  make_routed_svg_from_netlist(raw, optimize=True))
 
-    def test_existing_controller_default_hash_unchanged(self):
-        raw = self.controller
-        expected = 'ce873349c6e80b477772cdf71ed399576edc2ca59e12685cfa74ef04fb7e82b9'
-        self.assertEqual(hashlib.sha256(make_svg_from_netlist(raw).encode()).hexdigest(), expected)
-        # Dense controller placements remain deliberately protected.
-        self.assertEqual(make_svg_from_netlist(raw, optimize=True),
-                         make_svg_from_netlist(raw))
+    def test_controller_optimization_preserves_wired_nets(self):
+        model = validate_model(self.controller)
+        before = route_model(model)
+        after = route_model(model, optimize=True)
+        self.assertEqual(after.pin_to_net, before.pin_to_net)
+        self.assertEqual(after.labels, ())
+        self.assertTrue(all(after.paths.values()))
 
     def test_optimize_order_independent(self):
         altered = copy.deepcopy(self.simple)

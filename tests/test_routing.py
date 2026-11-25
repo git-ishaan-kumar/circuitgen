@@ -7,7 +7,8 @@ from pathlib import Path
 from circuitgen.engine import (CircuitError, make_routed_svg_from_netlist,
                     make_svg_from_netlist, route_netlist, validate_model)
 from circuitgen.routing import (_MeshRouter, RoutingError, _intersects_rect,
-                     _segment_clearance, _segments, route_model)
+                     _segment_clearance, _segments, _unjoined_crossing, route_model,
+                     verify_display_connectivity)
 
 ROOT = Path(__file__).resolve().parent.parent
 
@@ -54,7 +55,11 @@ class TestRouting(unittest.TestCase):
             for i, (net, a, b) in enumerate(line_segments):
                 for other, c, d in line_segments[i+1:]:
                     if net != other:
-                        self.assertGreater(_segment_clearance(a,b,c,d), 0.14)
+                        self.assertTrue(
+                            _segment_clearance(a, b, c, d) > 0.14
+                            or _unjoined_crossing(a, b, c, d, edge_margin=0.60),
+                            f"{net} touches {other}",
+                        )
 
     def test_wires_do_not_cross_symbol_bodies(self):
         for raw, result in ((self.bridge, self.bridge_routes),
@@ -66,19 +71,51 @@ class TestRouting(unittest.TestCase):
                         self.assertFalse(any(_intersects_rect(a,b,rect)
                                              for rect in router.rects))
 
-    def test_controller_has_physical_sensor_data_wires(self):
+    def test_controller_power_and_signal_pins_are_physically_wired(self):
         result = self.controller_routes
-        expected = {'GND': 3, 'VCC': 2}
-        for net, count in expected.items():
-            self.assertEqual(sum(label.net == net for label in result.labels), count)
-        # Data pins should be joined by real wires instead of floating labels.
-        self.assertFalse(any(label.net in ('SDA', 'SCL') for label in result.labels))
-        self.assertTrue(result.paths['SDA'])
-        self.assertTrue(result.paths['SCL'])
-        self.assertTrue(result.paths['LED'])
-        self.assertTrue(result.paths['LEDA'])
-        for label in result.labels:
-            self.assertEqual(result.pin_to_net[label.ref], label.net)
+        self.assertEqual(result.labels, ())
+        self.assertTrue(all(result.paths.values()))
+        self.assertTrue(result.junctions["GND"])
+        verify_display_connectivity(validate_model(self.controller), result)
+
+    def test_ne555_power_and_ground_reach_battery_terminals(self):
+        raw = example("ne555.json")
+        model = validate_model(raw)
+        result = route_model(model)
+        self.assertEqual(result.labels, ())
+        self.assertTrue(result.junctions["VCC"])
+        self.assertTrue(result.junctions["GND"])
+        self.assertEqual(result.pin_to_net["B1.p"], "VCC")
+        self.assertEqual(result.pin_to_net["B1.n"], "GND")
+        verify_display_connectivity(model, result)
+
+    def test_shared_return_and_explicit_ground_keep_distinct_supplies(self):
+        raw = {
+            "components": [
+                {"id": "V1", "type": "dc_source", "value": "5V"},
+                {"id": "V2", "type": "current_source", "value": "1mA"},
+                {"id": "R1", "type": "resistor", "value": "1k"},
+                {"id": "R2", "type": "resistor", "value": "2k"},
+                {"id": "G1", "type": "ground", "value": ""},
+            ],
+            "nets": [
+                {"name": "VCC", "pins": ["V1.p", "R1.a"]},
+                {"name": "VDD", "pins": ["V2.p", "R2.a"]},
+                {"name": "GND", "pins": ["V1.n", "V2.n", "R1.b", "R2.b", "G1.gnd"]},
+            ],
+        }
+        model = validate_model(raw)
+        result = route_model(model)
+        self.assertEqual(result.labels, ())
+        self.assertNotEqual(result.pin_to_net["V1.p"], result.pin_to_net["V2.p"])
+        self.assertEqual({result.pin_to_net[ref] for ref in raw["nets"][2]["pins"]}, {"GND"})
+        self.assertTrue(result.junctions["GND"])
+        verify_display_connectivity(model, result)
+
+        svg = ET.fromstring(make_svg_from_netlist(raw))
+        grounds = [element for element in svg.iter() if element.get("data-type") == "ground"]
+        self.assertEqual([element.get("data-component") for element in grounds], ["G1"])
+        self.assertEqual(len(list(grounds[0].iter("{http://www.w3.org/2000/svg}line"))), 4)
 
     def test_controller_svg_labels_pins_inside_symbols(self):
         svg = make_routed_svg_from_netlist(self.controller)
@@ -127,7 +164,11 @@ class TestRouting(unittest.TestCase):
                 {'name':'A','pins':['V1.p','R1.a']},
                 {'name':'B','pins':['R1.b','V2.p']},
                 {'name':'C','pins':['V2.n','V1.n']}]}
-        self.assertEqual(set(route_netlist(raw).placement.symbols), {'V1','V2','R1'})
+        routed = route_netlist(raw)
+        self.assertEqual(set(routed.placement.symbols), {'V1','V2','R1'})
+        self.assertEqual(routed.labels, ())
+        self.assertTrue(all(routed.paths.values()))
+        verify_display_connectivity(validate_model(raw), routed)
 
     def test_invalid_pin_is_rejected_before_route(self):
         raw = copy.deepcopy(self.bridge)

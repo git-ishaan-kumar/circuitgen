@@ -36,9 +36,9 @@ class SchematicStyle:
         if self.component_color:
             rules.append(f".symbol,.fill{{stroke:{self.component_color}}}.fill{{fill:{self.component_color}}}")
         if self.wire_color:
-            rules.append(f".wire,.ground-mark,.power-mark{{stroke:{self.wire_color}}}.junction{{fill:{self.wire_color}}}")
+            rules.append(f".wire{{stroke:{self.wire_color}}}.junction{{fill:{self.wire_color}}}")
         if self.text_color:
-            rules.append(f".name,.label,.value,.pin,.mark,svg > .netlabel{{fill:{self.text_color}}}")
+            rules.append(f".name,.label,.value,.pin,.mark{{fill:{self.text_color}}}")
         if not self.show_component_ids:
             rules.append(".name,.label{display:none}")
         if not self.show_component_values:

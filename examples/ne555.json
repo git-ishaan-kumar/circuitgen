@@ -1,0 +1,21 @@
+{
+  "components": [
+    {"id": "B1", "type": "battery", "value": "9V"},
+    {"id": "U1", "type": "ne555", "value": "NE555"},
+    {"id": "R1", "type": "resistor", "value": "10k"},
+    {"id": "R2", "type": "resistor", "value": "100k"},
+    {"id": "C1", "type": "capacitor", "value": "10µF"},
+    {"id": "C2", "type": "capacitor", "value": "10nF"},
+    {"id": "R3", "type": "resistor", "value": "1k"},
+    {"id": "D1", "type": "led", "value": "red"}
+  ],
+  "nets": [
+    {"name": "VCC", "pins": ["B1.p", "U1.VCC", "U1.RESET", "R1.a"]},
+    {"name": "GND", "pins": ["B1.n", "U1.GND", "C1.b", "C2.b", "D1.b"]},
+    {"name": "DISCHARGE", "pins": ["U1.DISCH", "R1.b", "R2.a"]},
+    {"name": "TIMING", "pins": ["U1.TRIG", "U1.THRES", "R2.b", "C1.a"]},
+    {"name": "CONTROL", "pins": ["U1.CTRL", "C2.a"]},
+    {"name": "OUTPUT", "pins": ["U1.OUT", "R3.a"]},
+    {"name": "LED", "pins": ["R3.b", "D1.a"]}
+  ]
+}

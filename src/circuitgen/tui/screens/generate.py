@@ -162,7 +162,7 @@ class GenerateScreen(Screen[None]):
             self.app.pop_screen()
         self.progress = None
 
-    @work(exclusive=True)
+    @work(exclusive=True, description="Generate schematic")
     async def _generate(self, description: str, config: AppConfig, key: str, dest: Path,
                         sidecar: Path | None, approved: set[Path], mounted: Awaitable) -> None:
         default_model = ModelService.get_recommended_model(config.default_provider)
@@ -233,8 +233,8 @@ class GenerateScreen(Screen[None]):
             if not self.app.is_running:
                 return
             self._progress(3, "Saving schematic…")
-            await self.app.wait_for_refresh()
-            if not self.app.is_running:
+            await asyncio.sleep(0)
+            if not self.app.is_running or self.generation is not get_current_worker():
                 return
             ok, notice = write_outputs(payload, dest, result.netlist, sidecar, approved)
             if not ok:

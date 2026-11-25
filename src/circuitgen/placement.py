@@ -148,6 +148,9 @@ def _geometry(symbol: SymbolSpec, comp: Component, rotation: int, mirror: bool):
 
     title_y = top - 23 / GRID_PX
     value_y = bottom + 29 / GRID_PX
+    if symbol.shape == "ground":
+        title_y = bottom + 23 / GRID_PX
+        value_y = title_y + 0.85
     id_width = len(comp.cid) * 10.5 / GRID_PX
     value_width = len(comp.value) * 7.8 / GRID_PX
     left = min(left, -id_width / 2, -value_width / 2)

@@ -222,6 +222,7 @@ Built-in component types and standard pin names:
 | `opamp` | Operational amplifier | `IN+`, `IN-`, `OUT`, `V+`, `V-` |
 | `ne555` | 555 timer IC | `GND`, `TRIG`, `OUT`, `RESET`, `CTRL`, `THRES`, `DISCH`, `VCC` |
 | `arduino_uno` | Arduino Uno board | `D0`–`D13`, `A0`–`A5`, `3V3`, `5V`, `VIN`, `GND`, `RESET` |
+| `ground` | Explicit ground symbol | `gnd` |
 
 #### Custom Components
 
@@ -291,6 +292,11 @@ python -m circuitgen.erc path/to/netlist.json --json
 
 - CircuitGen is a schematic renderer, not a circuit simulator (like SPICE) or PCB layout tool (like KiCad).
 - Wire routing is orthogonal (Manhattan) and deterministic.
+- Multi-pin nets use continuous routed wires, including supply and return rails.
+  Wire jumps mark crossings between separate nets, and dots mark junctions.
+  Add a `ground` component and connect its `gnd` pin if you want a ground
+  symbol. The symbol has no effect on connectivity beyond its assigned net.
+- If no layout can be verified, rendering reports a routing error.
 - Manual netlist workflows are 100% offline and do not require network access or API keys.
 
 ## License

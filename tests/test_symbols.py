@@ -114,6 +114,11 @@ class TestSymbolLibrary(unittest.TestCase):
                 self.assertNotIn('class="bg"', markup)
                 self.assertEqual(markup, make_symbol_svg(kind, cid="X1", value="demo"))
 
+    def test_ground_preserves_explicit_pin_names(self):
+        self.assertEqual(get_symbol("ground").pin_names, ("gnd",))
+        self.assertEqual(get_symbol("ground", ["GND"]).pin_names, ("GND",))
+        self.assertEqual(get_symbol("ground", ["one", "two"]).shape, "ic")
+
     def test_rotated_and_mirrored_svg_is_parseable(self):
         for rotation in (0, 90, 180, 270):
             for mirror in (False, True):
