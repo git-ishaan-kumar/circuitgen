@@ -31,13 +31,13 @@ def build_parser() -> argparse.ArgumentParser:
     version_str = get_version()
     parser = argparse.ArgumentParser(
         prog="circuit",
-        description="CircuitGen: Circuit schematics from text descriptions or netlists.",
+        description="CircuitGen: A Python library and CLI for generating circuit schematics from text descriptions or netlists.",
     )
     parser.add_argument(
         "--version",
         "-v",
         action="version",
-        version=f"%(prog)s {version_str}",
+        version=f"CircuitGen {version_str}",
         help="Show program's version number and exit.",
     )
     parser.add_argument(

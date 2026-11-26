@@ -232,7 +232,7 @@ class GenerateScreen(Screen[None]):
                 self.set_status(f"Could not check models for this API key. {exc}")
                 return
             if models is not None and actual_model not in models:
-                self.set_status("Selected model is not listed. Use Change provider / model to choose another or clear Model ID for the default.")
+                self.set_status("Selected model is not listed for this API key. Choose another model or clear Model ID for the default.")
                 return
 
             self._progress(1, "Waiting for the provider to return a netlist…")

@@ -54,13 +54,10 @@ class TestInstallationAndPackaging(unittest.TestCase):
         self.assertIn(__version__, ver)
 
     def test_built_wheel_contains_required_resources(self):
-        dist_dir = Path("dist")
-        if not dist_dir.exists():
-            self.skipTest("dist directory not present")
-        wheels = list(dist_dir.glob("*.whl"))
-        if not wheels:
-            self.skipTest("No wheel found in dist/")
-        wheel_path = wheels[0]
+        wheel_name = os.environ.get("CIRCUITGEN_TEST_WHEEL")
+        if not wheel_name:
+            self.skipTest("Set CIRCUITGEN_TEST_WHEEL to a freshly built wheel")
+        wheel_path = Path(wheel_name)
         with zipfile.ZipFile(wheel_path, "r") as zf:
             namelist = zf.namelist()
             # Verify package data: theme.tcss must be inside wheel!
@@ -100,7 +97,7 @@ class TestInstallationAndPackaging(unittest.TestCase):
             check=False,
         )
         self.assertEqual(res_help.returncode, 0)
-        self.assertIn("CircuitGen: Circuit schematics", res_help.stdout)
+        self.assertIn("CircuitGen: A Python library and CLI for generating circuit schematics from text descriptions or netlists.", " ".join(res_help.stdout.split()))
         self.assertIn("setup-path", res_help.stdout)
         self.assertIn("doctor", res_help.stdout)
 

@@ -4,6 +4,8 @@ from __future__ import annotations
 import subprocess
 import sys
 import unittest
+from contextlib import redirect_stdout
+from io import StringIO
 from pathlib import Path
 from unittest.mock import patch
 
@@ -19,6 +21,18 @@ class TestCLIEntrypoint(unittest.TestCase):
             with patch("sys.stdout"):
                 parser.parse_args(["--version"])
         self.assertEqual(cm.exception.code, 0)
+
+    def test_version_uses_package_version_and_project_name(self):
+        output = StringIO()
+        with redirect_stdout(output), self.assertRaises(SystemExit):
+            build_parser().parse_args(["--version"])
+        self.assertEqual(output.getvalue().strip(), f"CircuitGen {__version__}")
+
+        with patch("circuitgen.cli.get_version", return_value="9.8.7"):
+            output = StringIO()
+            with redirect_stdout(output), self.assertRaises(SystemExit):
+                build_parser().parse_args(["--version"])
+            self.assertEqual(output.getvalue().strip(), "CircuitGen 9.8.7")
 
     def test_parser_help(self):
         parser = build_parser()
@@ -62,7 +76,7 @@ class TestCLIEntrypoint(unittest.TestCase):
             check=False,
         )
         self.assertEqual(res.returncode, 0)
-        self.assertIn("CircuitGen: Circuit schematics", res.stdout)
+        self.assertIn("CircuitGen: A Python library and CLI for generating circuit schematics from text descriptions or netlists.", " ".join(res.stdout.split()))
 
     def test_package_main_subprocess_version(self):
         """Verify python -m circuitgen --version works as a reliable entrypoint."""
@@ -73,7 +87,7 @@ class TestCLIEntrypoint(unittest.TestCase):
             check=False,
         )
         self.assertEqual(res.returncode, 0)
-        self.assertIn(__version__, res.stdout)
+        self.assertEqual(res.stdout.strip(), f"CircuitGen {__version__}")
 
     def test_package_main_subprocess_help(self):
         """Verify python -m circuitgen --help works as a reliable entrypoint."""
@@ -84,7 +98,7 @@ class TestCLIEntrypoint(unittest.TestCase):
             check=False,
         )
         self.assertEqual(res.returncode, 0)
-        self.assertIn("CircuitGen: Circuit schematics", res.stdout)
+        self.assertIn("CircuitGen: A Python library and CLI for generating circuit schematics from text descriptions or netlists.", " ".join(res.stdout.split()))
 
     def test_both_entrypoints_produce_identical_version_output(self):
         """Ensure python -m circuitgen and python -m circuitgen.cli match identically."""
