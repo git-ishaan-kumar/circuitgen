@@ -25,7 +25,10 @@ class CircuitResult:
         return encode_schematic(self.svg, output_format or self.output_format)
 
     def save(self, path: str | Path, *, output_format: str | None = None) -> str:
-        dest = Path(path)
+        selected_format = normalize_format(output_format or self.output_format)
+        path_text = str(path).strip()
+        dest = (Path.cwd() / f"circuit.{selected_format}" if not path_text
+                else Path(path_text).expanduser().resolve())
         suffix = dest.suffix.lower().lstrip(".")
         data = self.encode(output_format or (suffix if suffix in OUTPUT_FORMATS else self.output_format))
         dest.parent.mkdir(parents=True, exist_ok=True)
@@ -84,7 +87,7 @@ def render(
 def from_netlist(
     data: dict[str, Any],
     *,
-    output: str | Path | None = None,
+    output: str | Path | None = "",
     optimize: bool = False,
     color: str = "#000000",
     style: SchematicStyle | None = None,
@@ -109,7 +112,7 @@ def generate(
     *,
     provider: str = "gemini",
     model: str | None = None,
-    output: str | Path | None = None,
+    output: str | Path | None = "",
     optimize: bool = False,
     color: str = "#000000",
     correction: str = "",

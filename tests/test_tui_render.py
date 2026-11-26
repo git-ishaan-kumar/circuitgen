@@ -164,6 +164,29 @@ def test_render_paste_success_offline(tmp_path: Path):
     asyncio.run(_run())
 
 
+def test_blank_output_directory_uses_working_directory(tmp_path: Path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    output = tmp_path / "root-circuit.svg"
+
+    async def _run():
+        app = CircuitGenApp()
+        async with app.run_test() as pilot:
+            app.push_screen(RenderPasteScreen())
+            await pilot.pause()
+            app.screen.query_one("#render-paste-editor", JsonEditor).text = SAMPLE_VALID_NETLIST
+            app.screen.query_one("#render-paste-output-dir", EnhancedInput).value = ""
+            app.screen.query_one("#render-paste-filename", EnhancedInput).value = output.name
+            menu = app.screen.query_one("#render-paste-menu", SelectableMenu)
+            menu.cursor_index = 0
+            menu.focus()
+            await pilot.press("enter")
+            await pilot.pause()
+            assert isinstance(app.screen, RenderSuccessScreen)
+            assert output.exists()
+
+    asyncio.run(_run())
+
+
 def test_render_file_missing_and_invalid_json(tmp_path: Path):
     """Test error feedback when netlist file is missing or contains invalid JSON."""
     async def _run():

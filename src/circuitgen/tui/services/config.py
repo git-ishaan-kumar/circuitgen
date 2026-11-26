@@ -29,7 +29,7 @@ class AppConfig:
     default_provider: str = "gemini"
     model_mode: str = "automatic"
     explicit_model: str | None = None
-    default_output_dir: str = "./output/"
+    default_output_dir: str = "."
     overwrite_confirmation: bool = True
     fallback_policy: str = "off"
     interface_theme: str = "pcb-green"
@@ -109,7 +109,7 @@ class AppConfig:
             default_provider=str(provider),
             model_mode=str(data.get("model_mode", "automatic")),
             explicit_model=data.get("explicit_model"),
-            default_output_dir=str(data.get("default_output_dir", "./output/")),
+            default_output_dir=str(data.get("default_output_dir", ".")),
             overwrite_confirmation=bool(data.get("overwrite_confirmation", True)),
             fallback_policy="auto" if data.get("fallback_policy") == "auto" else "off",
             load_warning=warning,

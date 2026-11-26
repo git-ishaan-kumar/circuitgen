@@ -11,14 +11,17 @@ from textual.binding import Binding
 from textual.containers import Container, Horizontal, Vertical
 from textual.screen import Screen
 from textual.widgets import Header, Static
+from textual import work
 
 from circuitgen.engine import CircuitError, validate_model
 from circuitgen.erc import check_model
 from circuitgen.tui.services.file_io import FileIOService
+from circuitgen.tui.services.background import run_background_stage
 from circuitgen.tui.widgets.enhanced_input import EnhancedInput
 from circuitgen.tui.widgets.json_editor import JsonEditor
 from circuitgen.tui.widgets.path_picker import PathPickerModal
 from circuitgen.tui.widgets.selectable_menu import MenuItem, SelectableMenu
+from .processing import close_processing, show_processing
 
 
 SAFETY_NOTE = "Validation does not guarantee electrical safety."
@@ -58,6 +61,16 @@ def perform_validation(data: dict[str, Any]) -> NetlistCheck:
         [issue.message for issue in report.errors],
         [issue.message for issue in report.warnings],
     )
+
+
+def _read_and_check_file(path: str) -> tuple[dict[str, Any] | None, str | None, NetlistCheck | None]:
+    data, error, _ = FileIOService.read_json_file(path)
+    return data, error, perform_validation(data) if data is not None else None
+
+
+def _parse_and_check(text: str) -> tuple[dict[str, Any] | None, str | None, NetlistCheck | None]:
+    data, error, _ = FileIOService.parse_json_netlist(text)
+    return data, error, perform_validation(data) if data is not None else None
 
 
 # ---------------------------------------------------------------------------
@@ -213,17 +226,25 @@ class ValidateFileScreen(Screen[None]):
             self.query_one("#validate-input-file", EnhancedInput).focus()
             return
 
-        data, err, _ = FileIOService.read_json_file(input_path_str)
-        if err or data is None:
-            self.set_status(f"× {err}")
-            return
+        self._validate_file(input_path_str)
 
+    @work(exclusive=True, description="Validate netlist file")
+    async def _validate_file(self, input_path: str) -> None:
+        progress = await show_processing(self, "Reading and validating netlist…")
+        try:
+            data, error, check = await run_background_stage(lambda: _read_and_check_file(input_path))
+        except Exception as exc:
+            data, error, check = None, str(exc), None
+        finally:
+            close_processing(self, progress)
+
+        if not self.app.is_running or not self.is_mounted:
+            return
+        if error or data is None:
+            self.set_status(f"× {error}")
+            return
         self.app.push_screen(
-            ValidateResultScreen(
-                perform_validation(data),
-                source_type="file",
-                source_val=input_path_str,
-            )
+            ValidateResultScreen(check, source_type="file", source_val=input_path)
         )
 
     def action_back(self) -> None:
@@ -335,17 +356,25 @@ class ValidatePasteScreen(Screen[None]):
             editor.focus()
             return
 
-        data, err, _ = editor.validate_netlist()
-        if err or data is None:
-            self.set_status(f"× {err}")
-            return
+        self._validate_paste(raw_text)
 
+    @work(exclusive=True, description="Validate pasted netlist")
+    async def _validate_paste(self, raw_text: str) -> None:
+        progress = await show_processing(self, "Checking JSON and connections…")
+        try:
+            data, error, check = await run_background_stage(lambda: _parse_and_check(raw_text))
+        except Exception as exc:
+            data, error, check = None, str(exc), None
+        finally:
+            close_processing(self, progress)
+
+        if not self.app.is_running or not self.is_mounted:
+            return
+        if error or data is None:
+            self.set_status(f"× {error}")
+            return
         self.app.push_screen(
-            ValidateResultScreen(
-                perform_validation(data),
-                source_type="paste",
-                source_val=editor.text,
-            )
+            ValidateResultScreen(check, source_type="paste", source_val=raw_text)
         )
 
     def action_back(self) -> None:

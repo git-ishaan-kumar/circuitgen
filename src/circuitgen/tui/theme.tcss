@@ -405,6 +405,33 @@ GenerationProgress {
     width: 100%;
 }
 
+ProcessingScreen {
+    align: center middle;
+    background: $cg-background 60%;
+}
+
+#processing-card {
+    width: 42;
+    height: 7;
+    border: solid $cg-accent;
+    background: $cg-surface;
+    padding: 1 2;
+    align: center middle;
+}
+
+#processing-message {
+    width: 100%;
+    height: 1;
+    color: $cg-text;
+    text-align: center;
+}
+
+#processing-indicator {
+    width: 100%;
+    height: 2;
+    color: $cg-accent;
+}
+
 .generation-checkpoint {
     width: 1fr;
     height: 3;

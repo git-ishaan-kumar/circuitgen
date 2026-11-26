@@ -6,10 +6,16 @@ import dataclasses
 import math
 import re
 from collections.abc import Sequence
+from unicodedata import east_asian_width
 from xml.sax.saxutils import escape as xml_escape
 
 GRID_PX = 24
 PIN_NAME = re.compile(r"[A-Za-z0-9_+\-]{1,24}\Z")
+
+
+def label_width(text: str, font_size: int, average: float) -> float:
+    return sum(font_size if char in 'MWmw@%' or east_asian_width(char) in ('F', 'W')
+               else average for char in text)
 
 
 @dataclasses.dataclass(frozen=True)
@@ -387,3 +393,13 @@ def symbol_pin_labels(symbol: SymbolSpec, rotation: int = 0,
     """Return upright outward-facing labels, relative to symbol center (pixels)."""
     _check_orientation(rotation, mirror)
     return _pin_label_layout(symbol, rotation, mirror)
+
+
+def routed_pin_labels(symbol: SymbolSpec, rotation: int, mirror: bool, active_pins):
+    for label, x, y, anchor, side, pin_x, pin_y in symbol_pin_labels(symbol, rotation, mirror):
+        if label.split(' (', 1)[0] not in active_pins:
+            continue
+        if side in ('left', 'right'):
+            yield label, x, y - 14, anchor
+        else:
+            yield label, pin_x + 10, pin_y + 3.5, 'start'

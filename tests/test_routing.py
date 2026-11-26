@@ -6,6 +6,8 @@ from pathlib import Path
 
 from circuitgen.engine import (CircuitError, make_routed_svg_from_netlist,
                     make_svg_from_netlist, route_netlist, validate_model)
+from circuitgen.optimization import assess_layout
+from circuitgen.placement import place_model
 from circuitgen.routing import (_MeshRouter, RoutingError, _intersects_rect,
                      _segment_clearance, _segments, _unjoined_crossing, route_model,
                      verify_display_connectivity)
@@ -87,6 +89,45 @@ class TestRouting(unittest.TestCase):
         self.assertTrue(result.junctions["GND"])
         self.assertEqual(result.pin_to_net["B1.p"], "VCC")
         self.assertEqual(result.pin_to_net["B1.n"], "GND")
+        verify_display_connectivity(model, result)
+        for net, paths in result.paths.items():
+            pins = {result.placement.symbols[cid].pin_positions[pin]
+                    for cid, pin in (ref.split('.') for ref in model.nets[net])}
+            for index, path in enumerate(paths):
+                for point in (path[0], path[-1]):
+                    self.assertTrue(any(_segment_clearance(point, point, p, p) < 1e-6 for p in pins)
+                                    or any(_segment_clearance(point, point, a, b) < 1e-6
+                                           for j, branch in enumerate(paths) if j != index
+                                           for a, b in _segments(branch)), (net, point))
+
+    def test_default_layout_compacts_non_ic_circuit(self):
+        model = validate_model(example("layout_optimization.json"))
+        baseline = route_model(model, place_model(model))
+        result = route_model(model)
+        self.assertLess(assess_layout(result).footprint_area, assess_layout(baseline).footprint_area)
+        self.assertLess(assess_layout(result).wire_length, assess_layout(baseline).wire_length)
+        verify_display_connectivity(model, result)
+
+    def test_external_pin_labels_leave_room_for_wires(self):
+        raw = {
+            "components": [
+                {"id": "V1", "type": "battery", "value": "5V"},
+                {"id": "R1", "type": "resistor", "value": "1k"},
+                {"id": "Q1", "type": "npn", "value": "2N3904"},
+            ],
+            "nets": [
+                {"name": "VCC", "pins": ["V1.p", "R1.a", "Q1.C"]},
+                {"name": "BASE", "pins": ["R1.b", "Q1.B"]},
+                {"name": "GND", "pins": ["V1.n", "Q1.E"]},
+            ],
+        }
+        model = validate_model(raw)
+        result = route_model(model)
+        router = _MeshRouter(model, result.placement, 11)
+        for net, paths in result.paths.items():
+            for path in paths:
+                for a, b in _segments(path):
+                    self.assertFalse(any(_intersects_rect(a, b, rect) for rect in router.rects), net)
         verify_display_connectivity(model, result)
 
     def test_shared_return_and_explicit_ground_keep_distinct_supplies(self):

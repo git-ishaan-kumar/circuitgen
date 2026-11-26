@@ -97,13 +97,19 @@ netlist = {
     ],
 }
 
-# Render directly or save to a file
-result = from_netlist(netlist, output="circuit.svg")
+# Save to the working directory, using circuit.svg when no output is given
+result = from_netlist(netlist)
 print(f"Saved schematic to {result.output_path}")
 
 # Or access the SVG string directly in memory
-svg_markup = result.svg
+svg_markup = from_netlist(netlist, output=None).svg
 ```
+
+Relative output filenames are saved from the current working directory.
+Omitting `output` or passing `output=""` uses `circuit.svg` there. Pass
+`output=None` to keep the result in memory without saving a file. In the CLI,
+a blank output directory uses the current working directory, which is also the
+default for new settings.
 
 ### Export formats and appearance
 

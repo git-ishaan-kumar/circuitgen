@@ -8,21 +8,22 @@ import heapq
 import itertools
 import math
 from collections import defaultdict
-from functools import lru_cache
+from functools import lru_cache, partial
 from pathlib import Path
 from typing import TYPE_CHECKING
 from xml.sax.saxutils import escape as xml_escape
 
 from .placement import Placement, place_model, layout_candidates
-from .symbols import GRID_PX, symbol_body_svg, symbol_pin_labels, transform_point
+from .symbols import GRID_PX, label_width, routed_pin_labels, symbol_body_svg, transform_point
 
 if TYPE_CHECKING:
     from .engine import CircuitModel
 
 BODY_CLEARANCE = 0.20
 WIRE_CLEARANCE = 0.14
-BEND_PENALTY = 1.7
-CROSSING_PENALTY = 3.0  # crossing needs a bridge; prefer a modest detour
+BEND_PENALTY = 2.6
+CROSSING_PENALTY = 9.0
+LABEL_CLEARANCE = 0.24
 ROUTING_MARGIN = 11.0
 MAX_TRACK_NODES = 32000
 MAX_ROUTING_STATES = 550000
@@ -108,6 +109,14 @@ def _segments(points):
     return tuple(zip(points, points[1:]))
 
 
+def _label_rect(item, x, y, width, height, anchor):
+    left = x - width * {'start': 0, 'middle': .5, 'end': 1}[anchor]
+    return (item.x + left/GRID_PX - LABEL_CLEARANCE,
+            item.y + (y-height)/GRID_PX - LABEL_CLEARANCE,
+            item.x + (left+width)/GRID_PX + LABEL_CLEARANCE,
+            item.y + (y+3)/GRID_PX + LABEL_CLEARANCE)
+
+
 def _compress(points: tuple[Point, ...]) -> tuple[Point, ...]:
     if len(points) <= 2:
         return points
@@ -172,27 +181,19 @@ class _MeshRouter:
         self.rects = []
         for cid, item in placement.symbols.items():
             symbol = model.symbols[cid]
+            component = model.components[cid]
             l, t, r, b = _bounds(item, symbol)
             self.rects.append((l-BODY_CLEARANCE, t-BODY_CLEARANCE,
                                r+BODY_CLEARANCE, b+BODY_CLEARANCE))
-            tw = max(0.48, len(cid)*10.5/GRID_PX/2)
-            tx = item.x + item.title_x
-            if item.label_anchor == 'start':
-                bounds = (tx-0.15, tx+tw*2+0.15)
-            else:
-                bounds = (tx-tw-0.2, tx+tw+0.2)
-            self.rects.append((bounds[0], item.y+item.title_y-17/GRID_PX,
-                               bounds[1], item.y+item.title_y+5/GRID_PX))
-            value = model.components[cid].value
-            if value:
-                vw = max(0.4, len(value)*7.8/GRID_PX/2)
-                vx = item.x + item.value_x
-                if item.label_anchor == 'start':
-                    bounds = (vx-0.15, vx+vw*2+0.15)
-                else:
-                    bounds = (vx-vw-0.2, vx+vw+0.2)
-                self.rects.append((bounds[0], item.y+item.value_y-14/GRID_PX,
-                                   bounds[1], item.y+item.value_y+5/GRID_PX))
+            self.rects.append(_label_rect(item, item.title_x*GRID_PX, item.title_y*GRID_PX,
+                                          max(23, label_width(cid, 17, 10.5)), 17, item.label_anchor))
+            if component.value:
+                self.rects.append(_label_rect(item, item.value_x*GRID_PX, item.value_y*GRID_PX,
+                                              max(19, label_width(component.value, 13, 7.8)),
+                                              13, item.label_anchor))
+            if len(symbol.pins) > 2 and (symbol.shape != 'ic' or item.rotation not in (0, 180)):
+                for label, x, y, anchor in routed_pin_labels(symbol, item.rotation, item.mirror, component.pins):
+                    self.rects.append(_label_rect(item, x, y, label_width(label, 10, 6.3), 10, anchor))
         # Every pin is reserved, including deliberately unconnected pins.
         self.reserved_pins = tuple((pos, self.terminal_nets.get(ref))
                                    for ref, pos in self.pins.items())
@@ -208,7 +209,8 @@ class _MeshRouter:
                 elif y < t: body_point = (x, t)
                 elif y > b: body_point = (x, b)
                 else: continue
-                self.pin_leads.append((endpoint, body_point,
+                lead_start = tuple(a + (b-a)*.001 for a, b in zip(endpoint, body_point))
+                self.pin_leads.append((endpoint, lead_start, body_point,
                                        self.terminal_nets.get(f'{cid}.{pin}')))
         self.existing: dict[str, list[Segment]] = defaultdict(list)
         self.edge_geometry_clear = lru_cache(maxsize=200000)(self._edge_geometry_clear)
@@ -221,15 +223,15 @@ class _MeshRouter:
         return not any(_intersects_rect(a, b, rect) for rect in self.rects)
 
     def _valid(self, u, v, net):
-        key = (u, v) if u < v else (v, u)
-        if not self.edge_geometry_clear(*key):
+        if not self.edge_geometry_clear(u, v):
             return None
         a, b = self._p(u), self._p(v)
         for point, owner in self.reserved_pins:
             if owner != net and _segment_clearance(a, b, point, point) <= WIRE_CLEARANCE:
                 return None
-        for endpoint, body_point, owner in self.pin_leads:
-            if owner != net and _segment_clearance(a, b, endpoint, body_point) <= WIRE_CLEARANCE:
+        for endpoint, lead_start, body_point, owner in self.pin_leads:
+            start, clearance = (lead_start, 1e-7) if owner == net else (endpoint, WIRE_CLEARANCE)
+            if _segment_clearance(a, b, start, body_point) <= clearance:
                 return None
         crossings = 0
         for owner, segments in self.existing.items():
@@ -237,6 +239,11 @@ class _MeshRouter:
                 for c, d in segments:
                     if _segment_clearance(a, b, c, d) <= WIRE_CLEARANCE:
                         if not _unjoined_crossing(a, b, c, d, edge_margin=0.60):
+                            return None
+                        x, y = (c[0], a[1]) if a[1] == b[1] else (a[0], c[1])
+                        bridge = (x - .4, y - .52, x + .4, y + .06)
+                        if any(l <= bridge[2] and r >= bridge[0] and t <= bridge[3] and btm >= bridge[1]
+                               for l, t, r, btm in self.rects):
                             return None
                         crossings += 1
         return crossings
@@ -247,6 +254,20 @@ class _MeshRouter:
         if x+1 < self.width: yield (x+1, y), 0
         if y: yield (x, y-1), 1
         if y+1 < self.height: yield (x, y+1), 1
+
+    def _join_tree(self, path, tree):
+        # Crossover hops can skip mesh nodes already on the same net.
+        # Stop at the first contact so the rest of the hop leaves no stub.
+        joined = [path[0]]
+        for (x, y), (nx, ny) in _segments(path):
+            dx = (nx > x) - (nx < x)
+            dy = (ny > y) - (ny < y)
+            while (x, y) != (nx, ny):
+                x, y = x + dx, y + dy
+                joined.append((x, y))
+                if (x, y) in tree:
+                    return tuple(joined)
+        return tuple(joined)
 
     def _crossing_edges(self, net):
         """Provide straight edges with runway on both sides of each crossover."""
@@ -271,7 +292,7 @@ class _MeshRouter:
                     hops[v].append((u, across))
         return hops
 
-    def _search(self, start, goals, net, hops):
+    def _search(self, start, goals, net, hops, valid_edge):
         if start in goals:
             return (start,)
         gx0, gx1 = min(n[0] for n in goals), max(n[0] for n in goals)
@@ -299,7 +320,8 @@ class _MeshRouter:
             if expanded > MAX_ROUTING_STATES:
                 raise RoutingError(f'Routing search limit exceeded on net {net}')
             for nxt, d in itertools.chain(self._neighbors(node), hops.get(node, ())):
-                crossings = self._valid(node, nxt, net)
+                u, v = (node, nxt) if node < nxt else (nxt, node)
+                crossings = valid_edge(u, v)
                 if crossings is None:
                     continue
                 a, b = self._p(node), self._p(nxt)
@@ -316,6 +338,7 @@ class _MeshRouter:
         raise RoutingError(f'No collision-free path for net {net}')
 
     def route(self, order):
+        self.existing.clear()
         paths_by_net = {}
         raw_by_net = {}
         for net in order:
@@ -329,11 +352,12 @@ class _MeshRouter:
             remaining = nodes-tree
             raw_paths = []
             hops = self._crossing_edges(net)
+            valid_edge = lru_cache(maxsize=100000)(partial(self._valid, net=net))
             while remaining:
                 target = min(remaining, key=lambda node: (
                     min(abs(self.xs[node[0]]-self.xs[c[0]]) +
                         abs(self.ys[node[1]]-self.ys[c[1]]) for c in tree), node))
-                path = self._search(target, tree, net, hops)
+                path = self._join_tree(self._search(target, tree, net, hops, valid_edge), tree)
                 raw_paths.append(path)
                 tree.update(path)
                 remaining -= tree
@@ -378,9 +402,10 @@ class _MeshRouter:
             for pos, owner in self.reserved_pins:
                 if owner != net and _segment_clearance(a, b, pos, pos) <= WIRE_CLEARANCE:
                     raise RoutingError(f'Wire from {net} touches an unrelated pin')
-            for endpoint, body_point, owner in self.pin_leads:
-                if owner != net and _segment_clearance(a, b, endpoint, body_point) <= WIRE_CLEARANCE:
-                    raise RoutingError(f'Wire from {net} touches an unrelated pin lead')
+            for endpoint, lead_start, body_point, owner in self.pin_leads:
+                start, clearance = (lead_start, 1e-7) if owner == net else (endpoint, WIRE_CLEARANCE)
+                if _segment_clearance(a, b, start, body_point) <= clearance:
+                    raise RoutingError(f'Wire from {net} touches a pin lead before its terminal')
             for other, c, d in segments[i+1:]:
                 if (net != other and _segment_clearance(a, b, c, d) <= WIRE_CLEARANCE and
                         not _unjoined_crossing(a, b, c, d, segment_margin=0.60, edge_margin=0.60)):
@@ -496,6 +521,8 @@ def _expanded_placement(placement: Placement, scale: float) -> Placement:
 
 def _route_model_base(model: CircuitModel, placement: Placement | None = None) -> RoutedCircuit:
     """Try deterministic wire orders and keep the best verified route."""
+    from .optimization import assess_layout
+
     if placement is None:
         placement = place_model(model)
     pins = {ref: _pt(placement.symbols[ref.split('.', 1)[0]].pin_positions[
@@ -517,18 +544,15 @@ def _route_model_base(model: CircuitModel, placement: Placement | None = None) -
     # Prefer verified all-wire diagrams. Among successful route orders, favor
     # fewer unjoined crossings over small savings in wire length.
     complete_wiring = []
-    for order in (local_first, wide_first):
+    router = _MeshRouter(model, placement, ROUTING_MARGIN)
+    for order in (local_first,) if local_first == wide_first else (local_first, wide_first):
         try:
-            candidate = _MeshRouter(model, placement, ROUTING_MARGIN).route(order)
-            from .optimization import assess_layout
-            complete_wiring.append((_crossover_count(candidate),
-                                    assess_layout(candidate).score, candidate))
-            # Still evaluate the alternate order: it may have a much smaller
-            # footprint or shorter wires even with zero crossings.
+            candidate = router.route(order)
+            complete_wiring.append(candidate)
         except RoutingError as error:
             errors.append('all-wire: ' + str(error))
     if complete_wiring:
-        return min(complete_wiring, key=lambda x: (x[1] + 16*x[0], x[0]))[2]
+        return min(complete_wiring, key=lambda candidate: assess_layout(candidate).score)
 
     raise RoutingError('Unable to construct an electrically verified schematic. ' +
                        ' | '.join(errors[-4:]))
@@ -554,10 +578,8 @@ def route_model(model: CircuitModel, placement: Placement | None = None,
     best_score = math.inf
     last_error = None
 
-    # One extra automatic layout candidate is enough for normal interactive
-    # use. Explicit --optimize requests can try a few more.
     candidates = list(layout_candidates(model, original))
-    budget = min(len(candidates), 5 if optimize else 2)
+    budget = 5 if optimize else 3
     for index, candidate in enumerate(candidates[:budget]):
         scales = (1.0,) if index else (1.0, 1.25, 1.5)
         for scale in scales:
@@ -571,13 +593,9 @@ def route_model(model: CircuitModel, placement: Placement | None = None,
             except RoutingError as error:
                 last_error = error
                 continue
-            # Make confusing crossings materially more expensive when
-            # evaluating compact candidate placements.
-            score = assess_layout(routed).score + 16*_crossover_count(routed)
+            score = assess_layout(routed).score
             if score < best_score - 1e-5:
                 best_score, best = score, routed
-            break
-        if best is not None and index == 0 and len(model.components) > 18:
             break
     if best is None:
         # A new visual heuristic must never make a formerly drawable circuit
@@ -746,8 +764,8 @@ def make_routed_svg(model: CircuitModel, *, optimize: bool = False, color: str =
            '<style><![CDATA[',
            '.symbol{fill:none;stroke:#213149;stroke-width:2.6;stroke-linecap:round;stroke-linejoin:round}',
            '.mark{fill:#213149;font-family:Arial,sans-serif;font-size:16px;text-anchor:middle}',
-           '.name{fill:#17243c;font-family:Arial,sans-serif;font-size:17px;font-weight:700;text-anchor:middle}',
-           '.value{fill:#3e506d;font-family:Arial,sans-serif;font-size:13px;text-anchor:middle}',
+           '.name{fill:#17243c;font-family:Arial,sans-serif;font-size:17px;font-weight:700}',
+           '.value{fill:#3e506d;font-family:Arial,sans-serif;font-size:13px}',
            '.pin{fill:#394b66;font-family:Arial,sans-serif;font-size:10px}',
            '.wire{fill:none;stroke:#264a6f;stroke-width:2.6;stroke-linecap:round;stroke-linejoin:round}',
            '.junction{fill:#264a6f}',
@@ -797,11 +815,7 @@ def make_routed_svg(model: CircuitModel, *, optimize: bool = False, color: str =
                         continue
                     out.append(f'<text class="pin" text-anchor="{anchor}" x="{lx:.2f}" y="{cy+ly:.2f}">{xml(label)}</text>')
             else:
-                for label, lx, baseline, anchor, side, pin_x, pin_y in symbol_pin_labels(symbol, item.rotation, item.mirror):
-                    if label.split(' (', 1)[0] not in comp.pins:
-                        continue
-                    if side in ('left', 'right'):
-                        baseline -= 8
+                for label, lx, baseline, anchor in routed_pin_labels(symbol, item.rotation, item.mirror, comp.pins):
                     out.append(f'<text class="pin" text-anchor="{anchor}" x="{cx+lx:.2f}" y="{cy+baseline:.2f}">{xml(label)}</text>')
         out.append('</g>')
     out.append('</svg>')

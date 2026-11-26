@@ -1,7 +1,7 @@
 import copy
 import unittest
 
-from circuitgen.engine import CircuitError, make_svg_from_netlist
+from circuitgen.engine import CircuitError, layout, make_svg_from_netlist, segment_cells, validate
 
 
 def netlist(parts, nets):
@@ -60,6 +60,28 @@ class TestEngine(unittest.TestCase):
             [["V1.p", "R1.a", "R2.a", "R3.a"],
              ["V1.n", "R1.b", "R2.b", "R3.b"]],
         )
+
+    def test_parallel_rails_have_no_duplicate_wire_segments(self):
+        raw = netlist(
+            [("V1", "battery", "9V"), ("R1", "resistor", "WWWWWWWWWWWWWWWWWWWW"),
+             ("R2", "resistor", "20k"), ("R3", "resistor", "30k")],
+            [["V1.p", "R1.a", "R2.a", "R3.a"],
+             ["V1.n", "R1.b", "R2.b", "R3.b"]],
+        )
+        ink = layout(validate(raw))
+        edges = set()
+        for net, points in ink.wires:
+            for a, b in zip(points, points[1:]):
+                cells = segment_cells(a, b)
+                for start, end in zip(cells, cells[1:]):
+                    edge = (net, *sorted((start, end)))
+                    self.assertNotIn(edge, edges)
+                    edges.add(edge)
+        self.assertEqual({ink.placed[cid].x for cid in ("R1", "R2", "R3")},
+                         {ink.placed["R1"].x})
+        for cid in ("R1", "R2", "R3"):
+            part = ink.placed[cid]
+            self.assertEqual({x - part.x for x, _ in part.terminals.values()}, {-2, 2})
 
     def test_nested_series_parallel(self):
         self.check_svg(

@@ -29,6 +29,8 @@ class LayoutQuality:
 
 def assess_layout(routed: RoutedCircuit) -> LayoutQuality:
     """Evaluate an already verified route; lower score is preferable."""
+    from .routing import _crossover_count
+
     all_points = []
     for symbol in routed.placement.symbols.values():
         all_points.extend(((symbol.x-symbol.half_width, symbol.y-symbol.half_height),
@@ -52,8 +54,7 @@ def assess_layout(routed: RoutedCircuit) -> LayoutQuality:
     bottom = max(y for x, y in all_points)
     area = (right-left)*(bottom-top)
     count = len(routed.labels)
-    # One additional named endpoint is much worse than a few ordinary wire bends.
-    score = length + 1.75*bends + 0.08*area + 30*count
+    score = length + 1.75*bends + 0.08*area + 30*count + 34*_crossover_count(routed)
     return LayoutQuality(round(length, 4), bends, round(area, 4), count,
                          round(score, 4))
 

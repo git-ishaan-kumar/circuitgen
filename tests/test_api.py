@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import tempfile
+import os
 import unittest
 from pathlib import Path
 from unittest.mock import patch
@@ -77,7 +78,7 @@ class TestPublicAPI(unittest.TestCase):
         self.assertIsNone(res.model)
 
     def test_from_netlist_memory(self):
-        res = from_netlist(SAMPLE_NETLIST)
+        res = from_netlist(SAMPLE_NETLIST, output=None)
         self.assertIsInstance(res, CircuitResult)
         self.assertIn("<svg", res.svg)
         self.assertIn("</svg>", res.svg)
@@ -93,8 +94,41 @@ class TestPublicAPI(unittest.TestCase):
             self.assertEqual(res.output_path, str(out_file))
             self.assertEqual(out_file.read_text(encoding="utf-8"), res.svg)
 
+    def test_relative_output_path_uses_root_directory(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            original_dir = Path.cwd()
+            try:
+                os.chdir(tmp)
+                res = from_netlist(SAMPLE_NETLIST, output="circuit.svg")
+                self.assertEqual(res.output_path, str(Path(tmp) / "circuit.svg"))
+                self.assertTrue((Path(tmp) / "circuit.svg").exists())
+            finally:
+                os.chdir(original_dir)
+
+    def test_omitted_output_uses_root_default_filename(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            original_dir = Path.cwd()
+            try:
+                os.chdir(tmp)
+                res = from_netlist(SAMPLE_NETLIST)
+                self.assertEqual(res.output_path, str(Path(tmp) / "circuit.svg"))
+                self.assertTrue((Path(tmp) / "circuit.svg").exists())
+            finally:
+                os.chdir(original_dir)
+
+    def test_empty_output_path_uses_root_default_filename(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            original_dir = Path.cwd()
+            try:
+                os.chdir(tmp)
+                res = from_netlist(SAMPLE_NETLIST, output="")
+                self.assertEqual(res.output_path, str(Path(tmp) / "circuit.svg"))
+                self.assertTrue((Path(tmp) / "circuit.svg").exists())
+            finally:
+                os.chdir(original_dir)
+
     def test_circuit_result_save(self):
-        res = from_netlist(SAMPLE_NETLIST)
+        res = from_netlist(SAMPLE_NETLIST, output=None)
         with tempfile.TemporaryDirectory() as tmp:
             out_file = Path(tmp) / "sub" / "saved.svg"
             returned_path = res.save(out_file)
@@ -133,13 +167,13 @@ class TestPublicAPI(unittest.TestCase):
         }
         res = validate(custom)
         self.assertTrue(res.valid)
-        out = from_netlist(custom)
+        out = from_netlist(custom, output=None)
         self.assertIn("<svg", out.svg)
 
     @patch("circuitgen.api.generate_netlist")
     def test_generate_mocked(self, mock_ai):
         mock_ai.return_value = SAMPLE_NETLIST
-        res = generate("Create an LED circuit", provider="openai", model="gpt-4o")
+        res = generate("Create an LED circuit", provider="openai", model="gpt-4o", output=None)
         mock_ai.assert_called_once_with(
             "Create an LED circuit",
             provider="openai",

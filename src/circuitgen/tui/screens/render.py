@@ -18,6 +18,7 @@ from textual.widgets import Header, Static
 
 from circuitgen.api import from_netlist, validate
 from circuitgen.export import OUTPUT_FORMATS
+from circuitgen.tui.services.background import run_background_stage
 from circuitgen.tui.screens.confirm_dialog import CreateDirectoryModal, OverwriteModal
 from circuitgen.tui.services.config import ConfigService
 from circuitgen.tui.services.file_io import FileIOService
@@ -25,6 +26,7 @@ from circuitgen.tui.widgets.enhanced_input import EnhancedInput
 from circuitgen.tui.widgets.json_editor import JsonEditor
 from circuitgen.tui.widgets.path_picker import PathPickerModal
 from circuitgen.tui.widgets.selectable_menu import MenuItem, SelectableMenu
+from .processing import close_processing, show_processing
 
 
 def open_file_in_system_viewer(path: Path) -> tuple[bool, str]:
@@ -123,39 +125,66 @@ def save_render(
             return
 
     def save(approved: set[Path]) -> None:
-        try:
-            result = from_netlist(data, style=config.schematic_style(), output_format=config.output_format)
-            schematic = result.encode()
-        except Exception as exc:
-            screen.set_status(f"Could not render schematic: {exc}")
-            return
-
-        ok, message = write_outputs(schematic, dest, data, sidecar, approved)
-        if not ok:
-            screen.set_status(message)
-            return
-        notices = [message] if message else []
-
-        result_screen = RenderSuccessScreen(
-            svg_path=dest,
-            input_source=source_label,
-            components_count=len(result.model.components),
-            nets_count=len(result.model.nets),
-            netlist=data,
+        screen.run_worker(
+            _render_and_save(screen, data, dest, sidecar, approved, source_label, config),
+            name="offline-render",
+            group="offline-render",
+            exclusive=True,
+            description="Render schematic",
         )
-        if config.auto_open:
-            opened, message = open_file_in_system_viewer(dest)
-            if not opened:
-                notices.append(message)
-        def show_notice() -> None:
-            if notices:
-                result_screen.set_status(" ".join(notices))
-
-        screen.app.push_screen(result_screen)
-        result_screen.call_after_refresh(show_notice)
 
     targets = [dest, sidecar] if sidecar else [dest]
     confirm_output(screen, targets, config.overwrite_confirmation, save)
+
+
+def _read_and_validate_render(path: str):
+    data, error, _ = FileIOService.read_json_file(path)
+    return data, error, validate(data) if data is not None else None
+
+
+def _parse_and_validate_render(text: str):
+    data, error, _ = FileIOService.parse_json_netlist(text)
+    return data, error, validate(data) if data is not None else None
+
+
+async def _render_and_save(screen, data, dest, sidecar, approved, source_label, config) -> None:
+    progress = await show_processing(screen, "Rendering and saving schematic…")
+    try:
+        def render_and_write():
+            result = from_netlist(
+                data, output=None, style=config.schematic_style(), output_format=config.output_format,
+            )
+            ok, message = write_outputs(result.encode(), dest, data, sidecar, approved)
+            return result, ok, message
+
+        try:
+            result, ok, message = await run_background_stage(render_and_write)
+        except Exception as exc:
+            if screen.app.is_running and screen.is_mounted:
+                screen.set_status(f"Could not render schematic: {exc}")
+            return
+        if not screen.app.is_running or not screen.is_mounted:
+            return
+        if not ok:
+            screen.set_status(message)
+            return
+    finally:
+        close_processing(screen, progress)
+
+    notices = [message] if message else []
+    if config.auto_open:
+        opened, message = open_file_in_system_viewer(dest)
+        if not opened:
+            notices.append(message)
+    result_screen = RenderSuccessScreen(
+        svg_path=dest,
+        input_source=source_label,
+        components_count=len(result.model.components),
+        nets_count=len(result.model.nets),
+        netlist=data,
+    )
+    screen.app.push_screen(result_screen)
+    result_screen.call_after_refresh(lambda: result_screen.set_status(" ".join(notices)))
 
 
 class RenderModeScreen(Screen[None]):
@@ -227,7 +256,7 @@ class RenderFileScreen(Screen[None]):
 
     def compose(self) -> ComposeResult:
         config = ConfigService.load()
-        default_dir = config.default_output_dir or "./output/"
+        default_dir = config.default_output_dir or "."
 
         yield Header(show_clock=False)
         with Container(id="home-container"):
@@ -330,7 +359,7 @@ class RenderFileScreen(Screen[None]):
         self.app.push_screen(PathPickerModal(initial_path=start_path, mode="file", filters=[".json"]), _on_picked)
 
     def _browse_dir(self) -> None:
-        current_dir = self.query_one("#render-output-dir", EnhancedInput).value.strip() or "./output/"
+        current_dir = self.query_one("#render-output-dir", EnhancedInput).value.strip() or "."
         start_path = Path(current_dir)
 
         def _on_picked(picked: Path | None) -> None:
@@ -349,30 +378,36 @@ class RenderFileScreen(Screen[None]):
             self.query_one("#render-input-file", EnhancedInput).focus()
             return
 
-        if not output_dir_str:
-            self.set_status("! Please specify an output directory.")
-            self.query_one("#render-output-dir", EnhancedInput).focus()
-            return
-
         if not filename_str:
             self.set_status("! Please specify an output filename.")
             self.query_one("#render-filename", EnhancedInput).focus()
             return
 
-        self.set_status("Reading netlist file...")
-        data, err, _ = FileIOService.read_json_file(input_path_str)
-        if err or data is None:
-            self.set_status(f"× {err}")
-            return
+        self._render_file(input_path_str, output_dir_str, filename_str)
 
-        # Validate with circuit engine
-        val_res = validate(data)
-        if not val_res.valid:
-            err_details = "\n".join(f"- {e}" for e in val_res.errors)
+    @work(exclusive=True, description="Read and validate netlist")
+    async def _render_file(self, input_path: str, directory: str, filename: str) -> None:
+        progress = await show_processing(self, "Reading and validating netlist…")
+        try:
+            data, error, result = await run_background_stage(
+                lambda: _read_and_validate_render(input_path)
+            )
+        except Exception as exc:
+            data, error, result = None, str(exc), None
+        finally:
+            close_processing(self, progress)
+
+        if not self.app.is_running or not self.is_mounted:
+            return
+        if error or data is None:
+            self.set_status(f"× {error}")
+            return
+        if not result.valid:
+            err_details = "\n".join(f"- {issue}" for issue in result.errors)
             self.set_status(f"× Invalid netlist\n{err_details}")
             return
-
-        save_render(self, data, output_dir_str, filename_str, input_path_str, input_path=Path(input_path_str))
+        save_render(self, data, directory, filename, input_path,
+                    input_path=Path(input_path))
 
     def action_back(self) -> None:
         self.app.pop_screen()
@@ -396,7 +431,7 @@ class RenderPasteScreen(Screen[None]):
 
     def compose(self) -> ComposeResult:
         config = ConfigService.load()
-        default_dir = config.default_output_dir or "./output/"
+        default_dir = config.default_output_dir or "."
 
         yield Header(show_clock=False)
         with Container(id="home-container"):
@@ -484,7 +519,7 @@ class RenderPasteScreen(Screen[None]):
             self.action_back()
 
     def _browse_dir(self) -> None:
-        current_dir = self.query_one("#render-paste-output-dir", EnhancedInput).value.strip() or "./output/"
+        current_dir = self.query_one("#render-paste-output-dir", EnhancedInput).value.strip() or "."
         start_path = Path(current_dir)
 
         def _on_picked(picked: Path | None) -> None:
@@ -503,29 +538,35 @@ class RenderPasteScreen(Screen[None]):
             editor.focus()
             return
 
-        if not output_dir_str:
-            self.set_status("! Please specify an output directory.")
-            self.query_one("#render-paste-output-dir", EnhancedInput).focus()
-            return
-
         if not filename_str:
             self.set_status("! Please specify an output filename.")
             self.query_one("#render-paste-filename", EnhancedInput).focus()
             return
 
-        self.set_status("Validating netlist...")
-        data, err, _ = editor.validate_netlist()
-        if err or data is None:
-            self.set_status(f"× {err}")
-            return
+        self._render_paste(editor.text, output_dir_str, filename_str)
 
-        val_res = validate(data)
-        if not val_res.valid:
-            err_details = "\n".join(f"- {e}" for e in val_res.errors)
+    @work(exclusive=True, description="Validate pasted netlist")
+    async def _render_paste(self, raw_text: str, directory: str, filename: str) -> None:
+        progress = await show_processing(self, "Checking JSON and connections…")
+        try:
+            data, error, result = await run_background_stage(
+                lambda: _parse_and_validate_render(raw_text)
+            )
+        except Exception as exc:
+            data, error, result = None, str(exc), None
+        finally:
+            close_processing(self, progress)
+
+        if not self.app.is_running or not self.is_mounted:
+            return
+        if error or data is None:
+            self.set_status(f"× {error}")
+            return
+        if not result.valid:
+            err_details = "\n".join(f"- {issue}" for issue in result.errors)
             self.set_status(f"× Invalid netlist\n{err_details}")
             return
-
-        save_render(self, data, output_dir_str, filename_str, "Pasted JSON")
+        save_render(self, data, directory, filename, "Pasted JSON")
 
     def action_back(self) -> None:
         self.app.pop_screen()

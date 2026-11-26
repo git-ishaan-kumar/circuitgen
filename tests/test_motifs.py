@@ -105,7 +105,7 @@ class TestHistoricMotifs(unittest.TestCase):
         self.assertNotIn('class="power-mark"', output)
         self.assertNotIn('class="netlabel"', output)
 
-    def test_existing_simple_output_identical(self):
+    def test_simple_series_svg_snapshot(self):
         raw = {
             'components': [
                 {'id':'V1','type':'battery','value':'9V'},
@@ -117,7 +117,7 @@ class TestHistoricMotifs(unittest.TestCase):
                 {'name':'N3','pins':['D1.b','V1.n']}],
         }
         digest = hashlib.sha256(make_svg_from_netlist(raw).encode('utf-8')).hexdigest()
-        self.assertEqual(digest, '1e92920795bf03268441a6bab9ea254573ceb68f2484bae3abed95031fd9db96')
+        self.assertEqual(digest, '89121fe7f390d5037259a0f69dbb0a329115ef8e146597225a108173b9984d57')
 
     def test_xml_escaping_labels(self):
         modified = copy.deepcopy(self.bridge)

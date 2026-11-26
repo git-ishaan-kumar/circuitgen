@@ -7,18 +7,18 @@ import re
 from typing import Any
 from xml.sax.saxutils import escape as xml_escape
 
-from .symbols import BUILTIN_SYMBOLS, SymbolSpec, get_symbol
+from .symbols import BUILTIN_SYMBOLS, SymbolSpec, get_symbol, label_width
 
 # CONFIG
 
 MAX_COMPONENTS = 24
 MAX_NETS = 30
 GRID_PX = 23
-LEAF_WIDTH = 8
+LEAF_WIDTH = 6
 LEAF_UP = LEAF_DOWN = 3
-BRANCH_X_PAD = 4
-BRANCH_Y_GAP = 3
-SOURCE_X_GAP = 8
+BRANCH_X_PAD = 2
+BRANCH_Y_GAP = 2
+SOURCE_X_GAP = 5
 SOURCE_SYMBOL_HALF_HEIGHT = 2
 MARGIN = 2.2
 
@@ -388,14 +388,17 @@ def ids(n: Network) -> str:
     return n.cid if n.kind == "leaf" else ",".join(ids(c) for c in n.kids)
 
 
-def measure(n: Network, sizes: dict[int, Size]) -> Size:
+def measure(n: Network, sizes: dict[int, Size], circuit: Circuit) -> Size:
     if n.kind == "leaf":
-        result = Size(LEAF_WIDTH, LEAF_UP, LEAF_DOWN)
+        component = circuit.components[n.cid]
+        width = max(label_width(n.cid, 17, 10.5), label_width(component.value, 14, 8.4))
+        width = max(LEAF_WIDTH, 2 * math.ceil((width/2 + 12) / GRID_PX))
+        result = Size(width, LEAF_UP + (component.kind == 'led'), LEAF_DOWN)
     elif n.kind == "series":
-        child = [measure(c, sizes) for c in n.kids]
+        child = [measure(c, sizes, circuit) for c in n.kids]
         result = Size(sum(s.width for s in child), max(s.up for s in child), max(s.down for s in child))
     else:
-        child = [measure(c, sizes) for c in n.kids]
+        child = [measure(c, sizes, circuit) for c in n.kids]
         cursor = 0
         centers = []
         for s in child:
@@ -416,13 +419,14 @@ def place(n: Network, x: int, y: int, sizes: dict[int, Size], circuit: Circuit, 
     s = sizes[id(n)]
     if n.kind == "leaf":
         comp = circuit.components[n.cid]
-        left_terminal = (x + 2, y)
-        right_terminal = (x + s.width - 2, y)
+        center = x + s.width // 2
+        left_terminal = (center - 2, y)
+        right_terminal = (center + 2, y)
         direction = "right" if comp.pins["a"] == n.u else "left"
         terminals = {"a": left_terminal, "b": right_terminal} if direction == "right" else {
             "a": right_terminal, "b": left_terminal,
         }
-        ink.placed[n.cid] = Placed(n.cid, x + s.width // 2, y, direction, terminals)
+        ink.placed[n.cid] = Placed(n.cid, center, y, direction, terminals)
         ink.wire(n.u, (x, y), left_terminal)
         ink.wire(n.v, right_terminal, (x + s.width, y))
         return
@@ -433,28 +437,29 @@ def place(n: Network, x: int, y: int, sizes: dict[int, Size], circuit: Circuit, 
             current += sizes[id(c)].width
         return
     content_w = s.width - 2 * BRANCH_X_PAD
+    top, bottom = min(0, *s.branch_offsets), max(0, *s.branch_offsets)
+    ink.wire(n.u, (x, top+y), (x, bottom+y))
+    ink.wire(n.v, (x+s.width, top+y), (x+s.width, bottom+y))
     for child, offset in zip(n.kids, s.branch_offsets):
         branch_y = y + offset
         delta = (content_w - sizes[id(child)].width) // 2
         left = x + BRANCH_X_PAD + delta
         right = left + sizes[id(child)].width
-        ink.wire(n.u, (x, y), (x, branch_y))
         ink.wire(n.u, (x, branch_y), (left, branch_y))
         place(child, left, branch_y, sizes, circuit, ink)
         ink.wire(n.v, (right, branch_y), (x + s.width, branch_y))
-        ink.wire(n.v, (x + s.width, branch_y), (x + s.width, y))
 
 
 def layout(circuit: Circuit) -> Ink:
     tree = expression(circuit)
     sizes: dict[int, Size] = {}
-    body = measure(tree, sizes)
+    body = measure(tree, sizes, circuit)
     ink = Ink()
     place(tree, 0, 0, sizes, circuit, ink)
     source = circuit.components[circuit.source]
     s_net, t_net = source.pins["p"], source.pins["n"]
     source_x = -SOURCE_X_GAP
-    return_y = max(11, body.down + 8)
+    return_y = max(9, body.down + 3)
     source_y = return_y // 2
     if source_y <= SOURCE_SYMBOL_HALF_HEIGHT + 1:
         raise CircuitError("Internal error: source placement conflict")
@@ -467,7 +472,11 @@ def layout(circuit: Circuit) -> Ink:
     ink.wire(s_net, (source_x, 0), (source_x, source_y - SOURCE_SYMBOL_HALF_HEIGHT))
     ink.wire(t_net, (source_x, source_y + SOURCE_SYMBOL_HALF_HEIGHT), (source_x, return_y))
     ink.wire(t_net, (source_x, return_y), (body.width, return_y))
-    ink.wire(t_net, (body.width, return_y), (body.width, 0))
+    tail = tree
+    while tail.kind == "series":
+        tail = tail.kids[-1]
+    rail_end = max(sizes[id(tail)].branch_offsets, default=0)
+    ink.wire(t_net, (body.width, return_y), (body.width, max(0, rail_end)))
     verify_geometry(circuit, ink)
     return ink
 
@@ -545,7 +554,10 @@ def svg(circuit: Circuit, ink: Ink) -> str:
     for p in ink.placed.values():
         coords.extend(p.terminals.values())
         coords.append((p.x, p.y))
-    min_x = min(p[0] for p in coords) - 4
+    source = circuit.components[circuit.source]
+    source_label = max(label_width(source.cid, 17, 10.5), label_width(source.value, 14, 8.4))
+    min_x = min(min(p[0] for p in coords) - 2,
+                ink.placed[source.cid].x - math.ceil((source_label + 51) / GRID_PX))
     max_x = max(p[0] for p in coords) + 4
     min_y = min(p[1] for p in coords) - 4
     max_y = max(p[1] for p in coords) + 3
@@ -593,8 +605,8 @@ def svg(circuit: Circuit, ink: Ink) -> str:
                 out.append(f'<circle class="symbol" cx="{x}" cy="{y}" r="25"/>')
                 out.append(f'<line class="symbol" x1="{x}" y1="{y-2*unit}" x2="{x}" y2="{y-25}"/>')
                 out.append(f'<line class="symbol" x1="{x}" y1="{y+25}" x2="{x}" y2="{y+2*unit}"/>')
-            out.append(f'<text class="label" x="{x-75}" y="{y-6}">{xml_text(cid)}</text>')
-            out.append(f'<text class="value" x="{x-75}" y="{y+15}">{xml_text(c.value)}</text>')
+            out.append(f'<text class="label" style="text-anchor:end" x="{x-36}" y="{y-6}">{xml_text(cid)}</text>')
+            out.append(f'<text class="value" style="text-anchor:end" x="{x-36}" y="{y+15}">{xml_text(c.value)}</text>')
             out.append(f'<text class="value" x="{x+20}" y="{y-25}">+</text>')
             out.append(f'<text class="value" x="{x+20}" y="{y+33}">−</text>')
         else:

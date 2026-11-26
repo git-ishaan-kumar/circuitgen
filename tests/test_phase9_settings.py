@@ -32,7 +32,7 @@ def test_style_overrides_preserve_default_output():
         background="white", component_color="#123456", wire_color="#334455",
         text_color="#440022", show_component_ids=False, show_component_values=False,
     )
-    svg = from_netlist(data, style=style).svg
+    svg = from_netlist(data, output=None, style=style).svg
     assert 'height="100%" fill="white"' in svg
     assert ".symbol,.fill{stroke:#123456}" in svg
     assert ".wire{stroke:#334455}" in svg
@@ -41,6 +41,11 @@ def test_style_overrides_preserve_default_output():
     assert '<text class="value"' not in svg
     with pytest.raises(ValueError, match="background"):
         SchematicStyle(background="url(https://example.test)")
+
+
+def test_new_config_uses_working_directory_for_output():
+    assert AppConfig().default_output_dir == "."
+    assert AppConfig.from_dict({}).default_output_dir == "."
 
 
 def test_binary_exports(tmp_path):

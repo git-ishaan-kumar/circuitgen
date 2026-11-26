@@ -12,7 +12,7 @@ import math
 from typing import TYPE_CHECKING
 from xml.sax.saxutils import escape as xml_escape
 
-from .symbols import (GRID_PX, SymbolSpec, pin_positions, symbol_body_svg,
+from .symbols import (GRID_PX, SymbolSpec, label_width, pin_positions, routed_pin_labels, symbol_body_svg,
                      symbol_pin_labels, transform_point)
 
 if TYPE_CHECKING:
@@ -136,9 +136,9 @@ def _geometry(symbol: SymbolSpec, comp: Component, rotation: int, mirror: bool):
     right, bottom = max(x for x, _ in points), max(y for _, y in points)
 
     if len(symbol.pins) > 2:
-        for label, lx, baseline, anchor, _, _, _ in symbol_pin_labels(symbol, rotation, mirror):
+        for label, lx, baseline, anchor in routed_pin_labels(symbol, rotation, mirror, comp.pins):
             x, y = lx / GRID_PX, baseline / GRID_PX
-            text_width = len(label) * 6.3 / GRID_PX
+            text_width = label_width(label, 10, 6.3) / GRID_PX
             label_left = x if anchor == "start" else (x - text_width if anchor == "end"
                                                          else x - text_width / 2)
             left = min(left, label_left)
@@ -151,8 +151,8 @@ def _geometry(symbol: SymbolSpec, comp: Component, rotation: int, mirror: bool):
     if symbol.shape == "ground":
         title_y = bottom + 23 / GRID_PX
         value_y = title_y + 0.85
-    id_width = len(comp.cid) * 10.5 / GRID_PX
-    value_width = len(comp.value) * 7.8 / GRID_PX
+    id_width = label_width(comp.cid, 17, 10.5) / GRID_PX
+    value_width = label_width(comp.value, 13, 7.8) / GRID_PX
     left = min(left, -id_width / 2, -value_width / 2)
     right = max(right, id_width / 2, value_width / 2)
     top = min(top, title_y - 17 / GRID_PX)
@@ -270,7 +270,8 @@ def _place_at(model: CircuitModel, cid: str, x: float, y: float,
             # Vertical sources need both labels beside their terminal axis.
             title_x = value_x = 2.3
             title_y, value_y = -0.34, 0.74
-        hw = max(hw, title_x + max(len(cid) * 10.5, len(comp.value) * 7.8) / GRID_PX + 1.0)
+        width = max(label_width(cid, 17, 10.5), label_width(comp.value, 13, 7.8))
+        hw = max(hw, title_x + width / GRID_PX + 1.0)
         hh = max(hh, abs(title_y) + 1.0, abs(value_y) + 1.0)
     return SymbolPlacement(cid, x, y, rotation, mirror, hw, hh,
                            pin_positions(symbol, x, y, rotation, mirror),
@@ -918,6 +919,34 @@ def _scale_centers(placement: Placement, factor_x: float, factor_y: float) -> Pl
     return dataclasses.replace(placement, symbols=items)
 
 
+def _compact_channels(placement: Placement) -> Placement:
+    items = placement.symbols.copy()
+    for axis, half_size in (('x', 'half_width'), ('y', 'half_height')):
+        bands = sorted((getattr(item, axis) - getattr(item, half_size),
+                        getattr(item, axis) + getattr(item, half_size), item.cid)
+                       for item in items.values())
+        right = bands[0][1]
+        shift = 0.0
+        for left, end, cid in bands:
+            # Keep the same offset within each occupied band, including aligned pins.
+            shift += max(0, math.floor((left - right - 2.5) * 2)) / 2
+            right = max(right, end)
+            if not shift:
+                continue
+            item = items[cid]
+            dx, dy = (-shift, 0) if axis == 'x' else (0, -shift)
+            items[cid] = dataclasses.replace(
+                item, x=item.x + dx, y=item.y + dy,
+                pin_positions={pin: (round(x + dx, 6), round(y + dy, 6))
+                               for pin, (x, y) in item.pin_positions.items()},
+            )
+    ordered = list(items.values())
+    for index, item in enumerate(ordered):
+        if not _has_space(item, {other.cid: other for other in ordered[:index]}, gap=0):
+            return placement
+    return dataclasses.replace(placement, symbols=items)
+
+
 def _compact_around_primary(model: CircuitModel, placement: Placement) -> Placement | None:
     """Pack component columns around a dominant IC, preserving pin orientations.
 
@@ -1002,16 +1031,18 @@ def layout_candidates(model: CircuitModel, baseline: Placement):
     electrically verify each candidate before it can be selected.
     """
     yield baseline
-    if len(model.components) < 2 or len(model.components) > 18:
+    if len(model.components) < 2:
         return
     seen = {tuple((cid, p.x, p.y) for cid, p in sorted(baseline.symbols.items()))}
-    for candidate in (
+    compact = _compact_channels(baseline)
+    alternatives = () if len(model.components) > 18 else (
         _compact_around_primary(model, baseline),
         _relax_connections(model, baseline, 2),
         _scale_centers(baseline, .86, 1.0),
         _scale_centers(baseline, 1.0, .86),
         _scale_centers(baseline, .90, .90),
-    ):
+    )
+    for candidate in (compact, *alternatives):
         if candidate is None:
             continue
         fingerprint = tuple((cid, p.x, p.y) for cid, p in sorted(candidate.symbols.items()))

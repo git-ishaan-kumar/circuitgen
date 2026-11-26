@@ -67,11 +67,14 @@ async def open_generate(app, pilot):
     return page
 
 
-def test_generate_saves_and_opens_netlist(config, tmp_path):
+def test_generate_saves_and_opens_netlist(config, tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+
     async def run():
         app = CircuitGenApp()
         async with app.run_test(size=(80, 24)) as pilot:
             await open_generate(app, pilot)
+            app.screen.query_one("#generate-directory", EnhancedInput).value = ""
             await select(app, pilot, "generate")
             await app.workers.wait_for_complete()
             await pilot.pause()

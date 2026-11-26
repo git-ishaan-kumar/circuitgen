@@ -2,11 +2,9 @@
 from __future__ import annotations
 
 import asyncio
-from concurrent.futures import Future
 from functools import partial
 from pathlib import Path
-from threading import Thread
-from typing import Awaitable, Callable, TypeVar
+from typing import Awaitable, Callable
 
 from textual import work
 from textual.app import ComposeResult
@@ -22,28 +20,10 @@ from circuitgen.engine import CircuitError
 from ..services.config import AppConfig, ConfigService
 from ..services.credentials import CredentialService
 from ..services.models import ModelService, ProviderError
+from ..services.background import run_background_stage as run_generation_stage
 from ..widgets import EnhancedInput, JsonEditor, MenuItem, PathPickerModal, SelectableMenu
 from .render import RenderSuccessScreen, confirm_output, schematic_path, write_outputs
 from .settings import ProviderSettings
-
-
-T = TypeVar("T")
-
-
-async def run_generation_stage(operation: Callable[[], T]) -> T:
-    result: Future[T] = Future()
-
-    def run() -> None:
-        if result.set_running_or_notify_cancel():
-            try:
-                result.set_result(operation())
-            except Exception as exc:
-                result.set_exception(exc)
-
-    # A cancelled generation can leave an HTTP request waiting for its timeout.
-    # The background stages never write files, so quitting need not wait for them.
-    Thread(target=run, daemon=True).start()
-    return await asyncio.wrap_future(result)
 
 
 class GenerateScreen(Screen[None]):
@@ -117,8 +97,8 @@ class GenerateScreen(Screen[None]):
         description = self.query_one(JsonEditor).text.strip()
         directory = self.query_one("#generate-directory", EnhancedInput).value.strip()
         filename = self.query_one("#generate-filename", EnhancedInput).value.strip()
-        if not description or not directory or not filename:
-            self.set_status("Enter a circuit description, output directory, and filename.")
+        if not description or not filename:
+            self.set_status("Enter a circuit description and filename.")
             return
 
         config = self.config
@@ -218,7 +198,8 @@ class GenerateScreen(Screen[None]):
             self._progress(2, "Validating and rendering the netlist…")
 
             def render_output():
-                result = from_netlist(netlist, style=config.schematic_style(), output_format=config.output_format)
+                result = from_netlist(netlist, output=None, style=config.schematic_style(),
+                                      output_format=config.output_format)
                 return result, result.encode()
 
             try:
