@@ -2,12 +2,14 @@
 
 A Python library and CLI for generating circuit schematics from text descriptions or netlists.
 
-CircuitGen takes a circuit netlist, places components, routes wires, and exports clean SVG schematics. It includes AI translation that converts natural-language prompts into valid netlists using a chosen provider.
+CircuitGen takes a circuit netlist, places components, routes wires, and exports SVG, PNG, or PDF schematics. It can also use an AI provider to turn a written description into a netlist.
+
+This README describes the 0.2.0 source version. Until 0.2.0 is published, a package-index install may provide the older 0.1.0 release; install from this repository to try the CLI described here.
 
 ## Installation
 
 ### Recommended: Using pipx (CLI application)
-If you want to use the `circuitgen` interactive CLI tool directly in your terminal, we recommend installing via [pipx](https://pypa.github.io/pipx/), which isolates dependencies and automatically ensures scripts are on your system `PATH`:
+To use the `circuit` command in your terminal, install the `circuitgen` package with [pipx](https://pypa.github.io/pipx/):
 
 ```bash
 pipx install circuitgen
@@ -35,7 +37,7 @@ Requires Python 3.10 or higher.
 You can launch the interactive terminal interface using either:
 
 ```bash
-circuitgen
+circuit
 ```
 
 Or using the universal cross-platform Python module entrypoint:
@@ -44,32 +46,34 @@ Or using the universal cross-platform Python module entrypoint:
 python -m circuitgen
 ```
 
-Both entrypoints run the exact same CLI. If your terminal cannot find the `circuitgen` command, `python -m circuitgen` always works without requiring PATH changes.
+Both run the same CLI. If your terminal cannot find `circuit`, `python -m circuitgen` runs the installed package without relying on the launcher being on PATH.
 
 ### Direct commands
 
 Use these commands when you do not want to open the terminal interface:
 
 ```bash
-circuitgen generate "A 9V battery connected to a red LED through a 330Ω resistor." -o led.svg
-circuitgen render circuit.json -o circuit.svg
-circuitgen validate circuit.json
-circuitgen config --show
-circuitgen help render
+circuit generate "A 9V battery connected to a red LED through a 330Ω resistor." -o led.svg
+circuit render circuit.json -o circuit.svg
+circuit validate circuit.json
+circuit config --show
+circuit help render
 ```
 
 `render` and `validate` work without an AI key. Pass `--stdin` instead of a file
-to pipe in JSON, for example `cat circuit.json | circuitgen validate --stdin`.
+to pipe in JSON, for example `cat circuit.json | circuit validate --stdin`.
 `generate --stdin` reads a description. Generate and Render save `circuit.<format>`
 in the current folder unless you set `-o` or `--output`; the extension can be
 `.svg`, `.png`, or `.pdf`. An existing file is kept unless you pass `--force`.
-Use `--no-color` for plain output. `circuitgen --help` lists every command.
-`config --show` prints saved preferences without API keys; `circuitgen config`
+Use `--no-color` for plain output. `circuit --help` lists every command.
+`config --show` prints saved preferences without API keys; `circuit config`
 opens Settings in an interactive terminal.
+
+See [CLI guide](docs/cli.md) for setup, keyboard controls, file handling, and all command flags.
 
 ### PATH Troubleshooting
 
-If you installed via `pip install circuitgen` (or `--user`) and typing `circuitgen` produces `"command not found"` or `'circuitgen' is not recognized`:
+If you installed via `pip install circuitgen` (or `--user`) and typing `circuit` produces `"command not found"` or `'circuit' is not recognized`:
 
 * **Windows:**
   * Python's user scripts directory is usually located at:

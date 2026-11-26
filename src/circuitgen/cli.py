@@ -11,18 +11,19 @@ from typing import Sequence
 
 
 def get_version() -> str:
-    """Return the package version from installed metadata or development fallback."""
+    """Return the version of the code being run."""
+    try:
+        from circuitgen import __version__
+
+        return __version__
+    except Exception:
+        pass
     try:
         from importlib.metadata import version
 
         return version("circuitgen")
     except Exception:
-        try:
-            from circuitgen import __version__
-
-            return __version__
-        except Exception:
-            return "0.1.0"
+        return "0.2.0"
 
 
 def build_parser() -> argparse.ArgumentParser:
