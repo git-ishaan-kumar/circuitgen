@@ -178,7 +178,11 @@ Supported providers: `gemini`, `openai`, `anthropic`, `deepseek`, `groq`, `mistr
 `generate()` also accepts `timeout` in seconds, `retry_transient=True` for one
 retry after a temporary failure, and `allow_model_fallback=True` to try the
 same provider's default model when a selected model returns HTTP 404. Retries
-and fallback are opt-in in the Python API. With `clarify=True`, a provider
+and fallback are opt-in in the Python API. Temporary failures retry at most
+once; authentication, access, quota, and billing failures do not retry.
+`ProviderRequestError.kind` identifies `authentication`, `access`,
+`model_unavailable`, `quota`, `rate_limit`, `timeout`, `network`, `temporary`,
+or `bad_response`. Its message excludes provider response bodies. With `clarify=True`, a provider
 request for essential wiring information raises `ClarificationRequired`.
 `decide_request(description)` reports clear requests as `ready`, ambiguous wiring as
 `needs_clarification`, unrelated requests as `out_of_scope`, and clearly harmful
@@ -284,6 +288,11 @@ copyable JSON view. Press Esc during generation to return to your draft.
 Generate checks the model list with the active API key before sending the
 description. Use **Browse models** if your configured model is missing from
 that list. A listed model can still be unavailable for a particular request.
+Generate caches model lists for five minutes per provider and API key; Browse
+models requests a fresh list. If a provider has no discovery endpoint, Generate
+tries the selected model and reports the result of the actual request. An
+automatic fallback uses only the same provider's default model when enabled in
+Settings; the success screen shows the model actually used.
 When essential wiring is unclear, Generate asks one question with **Continue**,
 **Skip**, and **Edit description**. Skip proceeds only when the screen can state
 an assumption; assumptions appear on the success screen. Unrelated or refused

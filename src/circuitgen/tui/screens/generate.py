@@ -21,12 +21,26 @@ from circuitgen.api import from_netlist
 from circuitgen.engine import CircuitError
 from ..services.config import AppConfig, ConfigService
 from ..services.credentials import CredentialService
-from ..services.models import ModelService, ProviderError
+from ..services.models import ModelNotFoundError, ModelService, ProviderError
 from ..services.background import run_background_stage as run_generation_stage
 from ..widgets import EnhancedInput, JsonEditor, MenuItem, PathPickerModal, SelectableMenu
 from .render import (RenderSuccessScreen, ViewNetlistScreen, confirm_output,
                      schematic_path, write_outputs)
 from .settings import ProviderSettings
+
+
+def provider_error_message(exc: ProviderRequestError) -> str:
+    return {
+        "authentication": "The provider rejected the API key. Change the key and try again.",
+        "access": "Access denied for this key or model. Choose another model or key.",
+        "model_unavailable": "Selected model is unavailable. Choose another model or clear Model ID for the default.",
+        "quota": "Provider quota or billing limit reached. Check your provider account or choose another model.",
+        "rate_limit": "Provider rate limit reached. Try again later.",
+        "timeout": "AI request timed out. Retry or change provider.",
+        "network": "Could not reach the provider. Check your connection and retry.",
+        "temporary": "The provider is temporarily unavailable. Try again later.",
+        "bad_response": "The provider returned an unreadable or incomplete response. Try again later.",
+    }.get(exc.kind, "The provider could not complete this request. Try again or change provider.")
 
 
 class GenerateScreen(Screen[None]):
@@ -196,6 +210,7 @@ class GenerateScreen(Screen[None]):
                         sidecar: Path | None, approved: set[Path], mounted: Awaitable) -> None:
         default_model = ModelService.get_recommended_model(config.default_provider)
         actual_model = config.explicit_model if config.model_mode == "manual" else default_model
+        selected_model = actual_model
 
         def report_model(model: str) -> None:
             nonlocal actual_model
@@ -206,12 +221,15 @@ class GenerateScreen(Screen[None]):
             try:
                 models = await run_generation_stage(partial(
                     ModelService.discover_models, config.default_provider, api_key=key,
+                    cache=True,
                 ))
+            except ModelNotFoundError:
+                models = None
             except ProviderError as exc:
                 self.set_status(f"Could not check models for this API key. {exc}")
                 return
-            if actual_model not in models:
-                self.set_status("The selected model is not listed for this API key. Use Browse models to choose another.")
+            if models is not None and actual_model not in models:
+                self.set_status("Selected model is not listed. Use Change provider / model to choose another or clear Model ID for the default.")
                 return
 
             self._progress(1, "Waiting for the provider to return a netlist…")
@@ -221,7 +239,7 @@ class GenerateScreen(Screen[None]):
                     provider=config.default_provider,
                     model=actual_model,
                     api_key=key, timeout=config.request_timeout, retry_transient=config.retry_transient,
-                    allow_model_fallback=config.fallback_policy == "auto" and default_model in models,
+                    allow_model_fallback=config.fallback_policy == "auto" and models is not None and default_model in models,
                     clarify=config.essential_clarifications, on_model=report_model,
                 ))
             except ClarificationRequired as exc:
@@ -241,14 +259,7 @@ class GenerateScreen(Screen[None]):
                 self.set_status(str(exc))
                 return
             except ProviderRequestError as exc:
-                message = {
-                    401: "The provider rejected the API key.",
-                    403: "The provider denied access. Check the key and model.",
-                    404: "The provider listed this model but rejected it for generation. Choose another model.",
-                    429: "The provider is limiting requests. Try again later.",
-                    503: "The provider is temporarily unavailable (HTTP 503). Try again later.",
-                }.get(exc.status, str(exc))
-                self.set_status(message)
+                self.set_status(provider_error_message(exc))
                 return
             except NetlistGenerationError as exc:
                 self._show_netlist_failure(
@@ -300,6 +311,8 @@ class GenerateScreen(Screen[None]):
             self.set_status("")
             self._close_progress()
             self.app.switch_screen(success)
+            if actual_model != selected_model:
+                notice += f" Used {actual_model} after {selected_model} was unavailable."
             success.call_after_refresh(lambda: success.show_saved_status(notice, config.auto_open))
         finally:
             if self.generation is get_current_worker():

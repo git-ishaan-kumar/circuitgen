@@ -2,8 +2,12 @@
 from __future__ import annotations
 
 import json
+import builtins
+import hashlib
 import logging
 import re
+import socket
+import time
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -58,6 +62,8 @@ class BadProviderResponseError(ProviderError):
 class ModelService:
     """Service for discovering, validating, and selecting provider models."""
 
+    _cache: dict[tuple[str, str], tuple[float, list[str]]] = {}
+
     @classmethod
     def get_recommended_model(cls, provider_id: str) -> str:
         """Return the tested default model for 'Automatic' policy."""
@@ -84,6 +90,7 @@ class ModelService:
         provider_id: str,
         api_key: str | None = None,
         timeout: float = 6.0,
+        cache: bool = False,
     ) -> list[str]:
         """Query provider discovery endpoint for available model IDs.
         
@@ -100,6 +107,11 @@ class ModelService:
             )
 
         clean_key = api_key.strip()
+        cache_key = (provider_id, hashlib.sha256(clean_key.encode("utf-8")).hexdigest())
+        if cache:
+            cached = cls._cache.get(cache_key)
+            if cached and time.monotonic() - cached[0] < 300:
+                return cached[1].copy()
         try:
             if provider_id == "gemini":
                 url = "https://generativelanguage.googleapis.com/v1beta/models"
@@ -143,7 +155,7 @@ class ModelService:
                 with urllib.request.urlopen(req, timeout=timeout) as resp:
                     try:
                         data = json.loads(resp.read().decode("utf-8"))
-                    except ValueError:
+                    except (ValueError, UnicodeError):
                         raise BadProviderResponseError("The provider returned an unreadable model list.") from None
 
                 entries = data.get("models" if gemini else "data") if isinstance(data, dict) else None
@@ -194,13 +206,20 @@ class ModelService:
                 req = urllib.request.Request(f"{url}?{query}", headers=dict(req.header_items()))
             else:
                 raise BadProviderResponseError("The provider model list exceeded the page limit.")
-            return sorted(model_ids)
+            models = sorted(model_ids)
+            if cache:
+                cls._cache[cache_key] = (time.monotonic(), models)
+            return models
 
         except urllib.error.HTTPError as exc:
-            if exc.code in (401, 403):
+            if exc.code == 401:
                 raise AuthenticationError(
                     f"Authentication rejected by {provider_id} (HTTP {exc.code})."
                 ) from exc
+            if exc.code == 403:
+                raise AccessDeniedError("The provider denied access to its model list.") from None
+            if exc.code == 402:
+                raise QuotaExceededError("The provider requires billing access for model discovery.") from None
             if exc.code == 404:
                 raise ModelNotFoundError(
                     f"Model discovery endpoint not found for {provider_id}."
@@ -213,5 +232,8 @@ class ModelService:
                 raise ProviderError("Model discovery is temporarily unavailable (HTTP 503).") from None
             raise ProviderError(f"Provider returned HTTP {exc.code} during model discovery.") from exc
 
-        except (urllib.error.URLError, TimeoutError, OSError):
+        except (urllib.error.URLError, OSError) as exc:
+            reason = getattr(exc, "reason", exc)
+            if isinstance(reason, (socket.timeout, builtins.TimeoutError)):
+                raise TimeoutError("Model discovery timed out.") from None
             raise NetworkError("Network unavailable while discovering models.") from None

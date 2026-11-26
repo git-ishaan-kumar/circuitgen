@@ -11,6 +11,8 @@ import re
 import urllib.error
 import urllib.request
 import urllib.parse
+import socket
+import time
 from dataclasses import dataclass
 from typing import Any, Callable
 
@@ -236,10 +238,68 @@ class ClarificationRequired(CircuitError):
 
 
 class ProviderRequestError(CircuitError):
-    def __init__(self, message: str, *, status: int | None = None, transient: bool = False) -> None:
+    def __init__(self, message: str, *, status: int | None = None,
+                 transient: bool = False, kind: str | None = None,
+                 retry_after: float | None = None) -> None:
         super().__init__(message)
         self.status = status
         self.transient = transient
+        self.kind = kind or {
+            401: "authentication", 402: "quota", 403: "access", 404: "model_unavailable",
+            429: "rate_limit", 503: "temporary", 504: "timeout",
+        }.get(status, "provider")
+        self.retry_after = retry_after
+
+
+def _http_failure(exc: urllib.error.HTTPError, provider: str) -> ProviderRequestError:
+    status = exc.code
+    try:
+        body = json.loads(exc.read(4096).decode("utf-8"))
+    except (ValueError, UnicodeError, OSError, AttributeError):
+        body = {}
+    finally:
+        exc.close()
+    details = body.get("error", {}) if isinstance(body, dict) else {}
+    if not isinstance(details, dict):
+        details = {}
+    code = str(details.get("code", "")).lower()
+    error_type = str(details.get("type", "")).lower()
+    markers = {code, error_type, str(details.get("status", "")).lower()}
+    quota = bool(markers & {"insufficient_quota", "quota_exceeded", "billing_not_active",
+                            "billing_hard_limit_reached", "payment_required"})
+    try:
+        retry_header = exc.headers.get("Retry-After")
+    except AttributeError:
+        retry_header = None
+    if retry_header is None:
+        retry_after = None
+    else:
+        try:
+            retry_after = float(retry_header)
+            if retry_after < 0:
+                retry_after = 3600.0
+        except (ValueError, TypeError):
+            retry_after = 3600.0
+    if status == 401:
+        kind = "authentication"
+    elif status in (402, 403, 429) and (status == 402 or quota):
+        kind = "quota"
+    elif status == 403:
+        kind = "access"
+    elif status == 404:
+        kind = "model_unavailable"
+    elif status == 429:
+        kind = "rate_limit"
+    elif status in (408, 504):
+        kind = "timeout"
+    elif status in (500, 502, 503):
+        kind = "temporary"
+    else:
+        kind = "provider"
+    transient = ((kind in ("timeout", "temporary") and (retry_after is None or retry_after <= 2))
+                 or (kind == "rate_limit" and retry_after is not None and retry_after <= 2))
+    return ProviderRequestError(f"{provider} API returned HTTP {status}", status=status,
+                                kind=kind, transient=transient, retry_after=retry_after)
 
 
 def _post_json(url: str, payload: dict[str, Any], headers: dict[str, str],
@@ -254,18 +314,20 @@ def _post_json(url: str, payload: dict[str, Any], headers: dict[str, str],
         with urllib.request.urlopen(req, timeout=timeout) as res:
             data = json.loads(res.read().decode("utf-8"))
     except urllib.error.HTTPError as exc:
-        raise ProviderRequestError(
-            f"{provider} API returned HTTP {exc.code}",
-            status=exc.code, transient=exc.code in (500, 502, 503, 504),
-        ) from None
-    except (urllib.error.URLError, TimeoutError, OSError):
-        raise ProviderRequestError(f"{provider} API connection problem", transient=True) from None
+        raise _http_failure(exc, provider) from None
+    except (urllib.error.URLError, TimeoutError, OSError) as exc:
+        reason = getattr(exc, "reason", exc)
+        kind = "timeout" if isinstance(reason, (TimeoutError, socket.timeout)) else "network"
+        raise ProviderRequestError(f"{provider} API connection problem", kind=kind,
+                                   transient=True) from None
     except (ValueError, UnicodeError) as exc:
-        raise CircuitError(f"{provider} API returned invalid response JSON") from exc
+        raise ProviderRequestError(f"{provider} API returned invalid response JSON",
+                                   kind="bad_response") from None
     if not isinstance(data, dict):
-        raise CircuitError(f"{provider} API response was not an object")
+        raise ProviderRequestError(f"{provider} API response was not an object",
+                                   kind="bad_response")
     if data.get("error"):
-        raise CircuitError(f"{provider} API reported an error")
+        raise ProviderRequestError(f"{provider} API reported an error", kind="provider")
     return data
 
 
@@ -317,7 +379,7 @@ def _gemini(full_text: str, model: str, key: str, *, timeout: float = 120, clari
         parts = data["candidates"][0]["content"]["parts"]
         return "".join(part.get("text", "") for part in parts)
     except (KeyError, IndexError, TypeError) as exc:
-        raise CircuitError("Gemini returned no usable text (possibly blocked or truncated)") from exc
+        raise ProviderRequestError("Gemini returned no usable text", kind="bad_response") from None
 
 
 def _anthropic(full_text: str, model: str, key: str, *, timeout: float = 120) -> str:
@@ -333,13 +395,14 @@ def _anthropic(full_text: str, model: str, key: str, *, timeout: float = 120) ->
         {"x-api-key": key, "anthropic-version": "2023-06-01"}, "anthropic", timeout=timeout,
     )
     if data.get("stop_reason") == "max_tokens":
-        raise CircuitError("Anthropic response was truncated; try a simpler circuit")
+        raise ProviderRequestError("Anthropic response was truncated; try a simpler circuit",
+                                   kind="bad_response")
     blocks = data.get("content", [])
     if any(block.get("type") == "refusal" for block in blocks):
         raise RequestDecisionError("refused")
     raw = "".join(block.get("text", "") for block in blocks if block.get("type") == "text")
     if not raw.strip():
-        raise CircuitError("Anthropic returned no text")
+        raise ProviderRequestError("Anthropic returned no text", kind="bad_response")
     return raw
 
 
@@ -360,7 +423,7 @@ def _openai_compatible(full_text: str, provider: str, model: str, key: str, *, t
         if choice.get("finish_reason") == "content_filter" or choice.get("message", {}).get("refusal"):
             raise RequestDecisionError("refused")
         if choice.get("finish_reason") == "length":
-            raise CircuitError(f"{provider} response was truncated")
+            raise ProviderRequestError(f"{provider} response was truncated", kind="bad_response")
         content = choice["message"]["content"]
         if isinstance(content, str):
             return content
@@ -368,7 +431,7 @@ def _openai_compatible(full_text: str, provider: str, model: str, key: str, *, t
             return "".join(part.get("text", "") for part in content if isinstance(part, dict))
         raise TypeError("No text content")
     except (KeyError, IndexError, TypeError) as exc:
-        raise CircuitError(f"{provider} returned no usable text") from exc
+        raise ProviderRequestError(f"{provider} returned no usable text", kind="bad_response") from None
 
 
 def generate_netlist(
@@ -454,7 +517,8 @@ def generate_netlist(
                 if allow_model_fallback and exc.status == 404 and chosen_model != settings["model"]:
                     chosen_model = settings["model"]
                     raw = request(chosen_model, request_text)
-                elif retry_transient and exc.transient:
+                elif retry_transient and exc.transient and (exc.retry_after is None or exc.retry_after <= 2):
+                    time.sleep(exc.retry_after if exc.retry_after is not None else 0.25)
                     raw = request(chosen_model, request_text)
                 else:
                     raise
