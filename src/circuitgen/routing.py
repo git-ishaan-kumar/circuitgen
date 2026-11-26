@@ -13,7 +13,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 from xml.sax.saxutils import escape as xml_escape
 
-from .placement import Placement, place_model, layout_candidates
+from .placement import Placement, _supply_net_names, place_model, layout_candidates
 from .symbols import GRID_PX, label_width, routed_pin_labels, symbol_body_svg, transform_point
 
 if TYPE_CHECKING:
@@ -25,7 +25,7 @@ BEND_PENALTY = 2.6
 CROSSING_PENALTY = 9.0
 LABEL_CLEARANCE = 0.24
 ROUTING_MARGIN = 11.0
-MAX_TRACK_NODES = 32000
+MAX_TRACK_NODES = 100000
 MAX_ROUTING_STATES = 550000
 Point = tuple[float, float]
 Segment = tuple[Point, Point]
@@ -213,7 +213,41 @@ class _MeshRouter:
                 self.pin_leads.append((endpoint, lead_start, body_point,
                                        self.terminal_nets.get(f'{cid}.{pin}')))
         self.existing: dict[str, list[Segment]] = defaultdict(list)
+        self._bin_size = 2.0
+        self._reserved_pin_bins = defaultdict(list)
+        self._pin_lead_bins = defaultdict(list)
+        self._existing_bins = defaultdict(list)
+        for point, owner in self.reserved_pins:
+            self._index_item(self._reserved_pin_bins,
+                             (point[0], point[1], point[0], point[1]), (point, owner))
+        for lead in self.pin_leads:
+            endpoint, lead_start, body_point, owner = lead
+            bounds = (min(endpoint[0], body_point[0]), min(endpoint[1], body_point[1]),
+                      max(endpoint[0], body_point[0]), max(endpoint[1], body_point[1]))
+            self._index_item(self._pin_lead_bins, bounds, lead)
         self.edge_geometry_clear = lru_cache(maxsize=200000)(self._edge_geometry_clear)
+
+    def _index_item(self, index, bounds, item):
+        left, top, right, bottom = bounds
+        size = self._bin_size
+        for ix in range(math.floor(left / size), math.floor(right / size) + 1):
+            for iy in range(math.floor(top / size), math.floor(bottom / size) + 1):
+                index[(ix, iy)].append(item)
+
+    def _nearby_items(self, index, a, b):
+        padding = WIRE_CLEARANCE
+        left, right = sorted((a[0], b[0]))
+        top, bottom = sorted((a[1], b[1]))
+        size = self._bin_size
+        found = set()
+        ordered = []
+        for ix in range(math.floor((left-padding)/size), math.floor((right+padding)/size) + 1):
+            for iy in range(math.floor((top-padding)/size), math.floor((bottom+padding)/size) + 1):
+                for item in index.get((ix, iy), ()):
+                    if item not in found:
+                        found.add(item)
+                        ordered.append(item)
+        return ordered
 
     def _p(self, node):
         return self.xs[node[0]], self.ys[node[1]]
@@ -226,26 +260,25 @@ class _MeshRouter:
         if not self.edge_geometry_clear(u, v):
             return None
         a, b = self._p(u), self._p(v)
-        for point, owner in self.reserved_pins:
+        for point, owner in self._nearby_items(self._reserved_pin_bins, a, b):
             if owner != net and _segment_clearance(a, b, point, point) <= WIRE_CLEARANCE:
                 return None
-        for endpoint, lead_start, body_point, owner in self.pin_leads:
+        for endpoint, lead_start, body_point, owner in self._nearby_items(self._pin_lead_bins, a, b):
             start, clearance = (lead_start, 1e-7) if owner == net else (endpoint, WIRE_CLEARANCE)
             if _segment_clearance(a, b, start, body_point) <= clearance:
                 return None
         crossings = 0
-        for owner, segments in self.existing.items():
+        for owner, c, d in self._nearby_items(self._existing_bins, a, b):
             if owner != net:
-                for c, d in segments:
-                    if _segment_clearance(a, b, c, d) <= WIRE_CLEARANCE:
-                        if not _unjoined_crossing(a, b, c, d, edge_margin=0.60):
+                if _segment_clearance(a, b, c, d) <= WIRE_CLEARANCE:
+                    if not _unjoined_crossing(a, b, c, d, edge_margin=0.60):
+                        return None
+                    x, y = (c[0], a[1]) if a[1] == b[1] else (a[0], c[1])
+                    bridge = (x - .4, y - .52, x + .4, y + .06)
+                    if any(l <= bridge[2] and r >= bridge[0] and t <= bridge[3] and btm >= bridge[1]
+                           for l, t, r, btm in self.rects):
                             return None
-                        x, y = (c[0], a[1]) if a[1] == b[1] else (a[0], c[1])
-                        bridge = (x - .4, y - .52, x + .4, y + .06)
-                        if any(l <= bridge[2] and r >= bridge[0] and t <= bridge[3] and btm >= bridge[1]
-                               for l, t, r, btm in self.rects):
-                            return None
-                        crossings += 1
+                    crossings += 1
         return crossings
 
     def _neighbors(self, node):
@@ -295,11 +328,10 @@ class _MeshRouter:
     def _search(self, start, goals, net, hops, valid_edge):
         if start in goals:
             return (start,)
-        gx0, gx1 = min(n[0] for n in goals), max(n[0] for n in goals)
-        gy0, gy1 = min(n[1] for n in goals), max(n[1] for n in goals)
+        goal_points = tuple(self._p(node) for node in goals)
         def heuristic(node):
             x, y = self._p(node)
-            return max(self.xs[gx0]-x, 0, x-self.xs[gx1]) + max(self.ys[gy0]-y, 0, y-self.ys[gy1])
+            return min(abs(gx-x) + abs(gy-y) for gx, gy in goal_points)
         seq = itertools.count()
         frontier = [(heuristic(start), 0.0, next(seq), start, -1)]
         distance = {(start, -1): 0.0}
@@ -339,6 +371,7 @@ class _MeshRouter:
 
     def route(self, order):
         self.existing.clear()
+        self._existing_bins.clear()
         paths_by_net = {}
         raw_by_net = {}
         for net in order:
@@ -348,7 +381,12 @@ class _MeshRouter:
                 paths_by_net[net] = ()
                 raw_by_net[net] = []
                 continue
-            tree = {self.pin_nodes[refs[0]]}
+            root = min(nodes, key=lambda node: (
+                sum(abs(self.xs[node[0]]-self.xs[other[0]]) +
+                    abs(self.ys[node[1]]-self.ys[other[1]]) for other in nodes),
+                node,
+            ))
+            tree = {root}
             remaining = nodes-tree
             raw_paths = []
             hops = self._crossing_edges(net)
@@ -365,7 +403,12 @@ class _MeshRouter:
             geometries = [tuple(self._p(node) for node in path) for path in raw_paths]
             paths_by_net[net] = tuple(_compress(path) for path in geometries)
             for path in geometries:
-                self.existing[net].extend(_segments(_compress(path)))
+                segments = _segments(_compress(path))
+                self.existing[net].extend(segments)
+                for a, b in segments:
+                    bounds = (min(a[0], b[0]), min(a[1], b[1]),
+                              max(a[0], b[0]), max(a[1], b[1]))
+                    self._index_item(self._existing_bins, bounds, (net, a, b))
         self._verify(raw_by_net, paths_by_net)
         junctions = {
             net: _junction_points(paths, {self.pins[ref] for ref in self.model.nets[net]})
@@ -504,8 +547,10 @@ def _expanded_placement(placement: Placement, scale: float) -> Placement:
     modifies actual placements and pin endpoints without moving pins relative
     to their components or changing the circuit.
     """
-    ox = min(item.x for item in placement.symbols.values())
-    oy = min(item.y for item in placement.symbols.values())
+    ox = (min(item.x for item in placement.symbols.values()) +
+          max(item.x for item in placement.symbols.values())) / 2
+    oy = (min(item.y for item in placement.symbols.values()) +
+          max(item.y for item in placement.symbols.values())) / 2
     moved = {}
     for cid, item in placement.symbols.items():
         nx = round(ox + (item.x - ox)*scale, 6)
@@ -536,21 +581,53 @@ def _route_model_base(model: CircuitModel, placement: Placement | None = None) -
         return (max(x for x, y in locations) - min(x for x, y in locations) +
                 max(y for x, y in locations) - min(y for x, y in locations))
 
-    # Local two-pin signal connections should be committed before wide buses.
+    # Local signal connections usually route cleanly before wide buses.
     local_first = sorted(model.nets, key=lambda n: (wire_span(n), len(model.nets[n]), n))
     wide_first = sorted(model.nets, key=lambda n: (-len(model.nets[n]), n))
-    errors = []
+    long_first = sorted(model.nets, key=lambda n: (-wire_span(n), -len(model.nets[n]), n))
+    supply_nets = _supply_net_names(model)
+    multi_pin_parts = {cid for cid, symbol in model.symbols.items() if len(symbol.pins) >= 3}
+    interface_first = sorted(model.nets, key=lambda n: (
+        n in supply_nets,
+        -len({ref.split('.', 1)[0] for ref in model.nets[n]
+              if ref.split('.', 1)[0] in multi_pin_parts}),
+        len(model.nets[n]), wire_span(n), n,
+    ))
 
     # Prefer verified all-wire diagrams. Among successful route orders, favor
     # fewer unjoined crossings over small savings in wire length.
     complete_wiring = []
     router = _MeshRouter(model, placement, ROUTING_MARGIN)
-    for order in (local_first,) if local_first == wide_first else (local_first, wide_first):
+    orders = []
+    for order in (local_first, interface_first, wide_first, long_first):
+        if order not in orders:
+            orders.append(order)
+    errors = []
+    for order in orders[:2]:
         try:
             candidate = router.route(order)
+            # Routing can be electrically sound yet too cramped to draw an
+            # unambiguous bridge. Reject it here so the next route order or
+            # placement gets a chance before SVG generation.
+            _crossover_hop_geometry(candidate, _crossover_map(candidate))
             complete_wiring.append(candidate)
+            # A fully verified drawing is more useful than spending another
+            # full maze search to compare small wire-length differences.
+            break
         except RoutingError as error:
             errors.append('all-wire: ' + str(error))
+    # Try fanout-first and span-first orders only when local and interface
+    # connections could not be routed as a complete verified drawing.
+    if not complete_wiring and len(orders) > 2:
+        try:
+            complete_wiring.append(router.route(orders[2]))
+        except RoutingError as error:
+            errors.append('wide-first: ' + str(error))
+    if not complete_wiring and len(orders) > 3:
+        try:
+            complete_wiring.append(router.route(orders[3]))
+        except RoutingError as error:
+            errors.append('long-first: ' + str(error))
     if complete_wiring:
         return min(complete_wiring, key=lambda candidate: assess_layout(candidate).score)
 
@@ -581,7 +658,7 @@ def route_model(model: CircuitModel, placement: Placement | None = None,
     candidates = list(layout_candidates(model, original))
     budget = 5 if optimize else 3
     for index, candidate in enumerate(candidates[:budget]):
-        scales = (1.0,) if index else (1.0, 1.25, 1.5)
+        scales = (1.0, 1.25, 1.5, 2.5) if index == 0 else (1.0, 1.25)
         for scale in scales:
             # Expansion is for recovery, not for making a successful drawing
             # larger. Stop at the original scale if it routed successfully.
@@ -603,12 +680,14 @@ def route_model(model: CircuitModel, placement: Placement | None = None,
         # original general/topological placement with the same strict checks.
         general = place_model(model, _skip_functional=True)
         if general.symbols != original.symbols:
-            for scale in (1.0, 1.25):
-                attempt = general if scale == 1.0 else _expanded_placement(general, scale)
-                try:
-                    return _route_model_base(model, attempt)
-                except RoutingError as error:
-                    last_error = error
+            recovery_candidates = list(layout_candidates(model, general))[:2]
+            for candidate in recovery_candidates:
+                for scale in (1.0, 1.25):
+                    attempt = candidate if scale == 1.0 else _expanded_placement(candidate, scale)
+                    try:
+                        return _route_model_base(model, attempt)
+                    except RoutingError as error:
+                        last_error = error
         raise RoutingError(f'No verified layout after routing and spacing retries: {last_error}')
     if optimize:
         from .optimization import choose_better_layout
@@ -672,9 +751,9 @@ def _crossover_hop_geometry(routed: RoutedCircuit, crossover_map):
             if j+1 < len(xs):
                 room = min(room, (xs[j+1] - x) / 2)
             radius = min(0.34, 0.78 * room)
-            if radius < 0.08:
+            if radius < 0.05:
                 raise RoutingError(f'Insufficient space for an unconnected wire jump on {net}')
-            height = min(0.46, 1.35 * radius)
+            height = min(0.46, max(0.18, 1.35 * radius))
             hops[_pt((x, a[1]))] = (radius, height)
     return hops
 

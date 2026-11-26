@@ -716,10 +716,14 @@ class ViewNetlistScreen(Screen[None]):
         Binding("q", "quit_app", "Quit", show=False),
     ]
 
-    def __init__(self, netlist: dict[str, Any], source_file: str = "circuit", **kwargs) -> None:
+    def __init__(self, netlist: dict[str, Any], source_file: str = "circuit", *,
+                 notice: str | None = None, back_label: str = "Back to schematic result",
+                 **kwargs) -> None:
         super().__init__(**kwargs)
         self.netlist = netlist
         self.source_file = source_file
+        self.notice = notice
+        self.back_label = back_label
 
     def compose(self) -> ComposeResult:
         json_str = json.dumps(self.netlist, indent=2)
@@ -733,6 +737,8 @@ class ViewNetlistScreen(Screen[None]):
 
                 yield Static("─" * 62, classes="rule")
                 yield Static("Netlist Structure:", classes="input-field-label")
+                if self.notice:
+                    yield Static(self.notice, id="netlist-view-notice", classes="status-message")
 
                 yield JsonEditor(text=json_str, id="netlist-viewer-editor")
                 yield Static("", id="netlist-view-status", classes="status-message")
@@ -740,7 +746,7 @@ class ViewNetlistScreen(Screen[None]):
                 yield SelectableMenu(
                     [
                         MenuItem("copy", "Copy JSON to clipboard", "Copy the full netlist to system clipboard"),
-                        MenuItem("back", "Back to schematic result", "Return to render success screen"),
+                        MenuItem("back", self.back_label, "Return to the previous screen"),
                     ],
                     initial_index=0,
                     id="netlist-view-menu",

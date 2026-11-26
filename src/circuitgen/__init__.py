@@ -7,6 +7,7 @@ __version__ = "0.1.0"
 
 from .api import (
     CircuitResult,
+    NetlistRenderError,
     ValidationResult,
     from_netlist,
     generate,
@@ -16,11 +17,12 @@ from .api import (
     validate,
 )
 from .engine import CircuitError, CircuitModel
-from .ai import ClarificationRequired
+from .ai import ClarificationRequired, NetlistGenerationError
 from .export import SchematicStyle
 
 __all__ = [
     "CircuitResult",
+    "NetlistRenderError",
     "ValidationResult",
     "from_netlist",
     "generate",
@@ -32,4 +34,5 @@ __all__ = [
     "CircuitModel",
     "SchematicStyle",
     "ClarificationRequired",
+    "NetlistGenerationError",
 ]

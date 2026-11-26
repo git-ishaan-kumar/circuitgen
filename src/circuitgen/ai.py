@@ -13,10 +13,21 @@ import urllib.request
 import urllib.parse
 from typing import Any, Callable
 
-from .engine import CircuitError
+from .engine import CircuitError, validate_model
 
 DEFAULT_PROVIDER = "gemini"
 DEFAULT_MODEL = "gemini-2.5-flash"
+MAX_NETLIST_REPAIR_ATTEMPTS = 2
+
+
+class NetlistGenerationError(CircuitError):
+    """The provider returned a netlist that stayed invalid after repair attempts."""
+
+    def __init__(self, message: str, netlist: dict[str, Any]):
+        super().__init__(message)
+        self.netlist = netlist
+
+_TERMINAL_REFERENCE_PATTERN = r"^[A-Za-z][A-Za-z0-9_]{0,31}\.[A-Za-z0-9_+\-]{1,24}$"
 
 SCHEMA: dict[str, Any] = {
     "type": "object",
@@ -40,8 +51,15 @@ SCHEMA: dict[str, Any] = {
             "items": {
                 "type": "object",
                 "properties": {
-                    "name": {"type": "string"},
-                    "pins": {"type": "array", "items": {"type": "string"}},
+                    "name": {
+                        "type": "string",
+                        "description": "A label for this net. It is not a component terminal reference.",
+                    },
+                    "pins": {
+                        "type": "array",
+                        "description": "Terminal references in componentID.pinName form. Never put a net name here.",
+                        "items": {"type": "string", "pattern": _TERMINAL_REFERENCE_PATTERN},
+                    },
                 },
                 "required": ["name", "pins"],
                 "additionalProperties": False,
@@ -103,8 +121,12 @@ GENERAL NETLIST RULES:
 8. Support series, parallel, bridges, feedback, transistors, and ICs.
 9. Match polarity and directions, especially LED anode/cathode.
 10. Return exactly "components" and "nets" at the top level.
-11. For every net terminal reference, use "componentID.pinName" and ensure
-    that pinName is defined by the registered symbol or the custom pin list.
+11. Keep net names and terminal references separate: "name" labels a net;
+    each item in "pins" must be a terminal reference in "componentID.pinName"
+    form. A net name such as "NET_5V" is never a terminal reference.
+12. Every referenced component ID must exist in "components", and each pin
+    name must exist on that component: use the registered pin names above or
+    the explicit custom component "pins" list. Do not guess or omit a pin.
 
 EXAMPLE — Arduino Uno with custom I2C sensor:
 {
@@ -314,10 +336,7 @@ def generate_netlist(
     clarify: bool = False,
     on_model: Callable[[str], None] | None = None,
 ) -> dict[str, Any]:
-    """Generate a JSON netlist using the selected AI provider.
-
-    Returns an unvalidated dict; pass it to the existing engine validator.
-    """
+    """Generate and validate a JSON netlist using the selected AI provider."""
     if not isinstance(user_prompt, str) or not user_prompt.strip():
         raise CircuitError("Circuit description must be a nonempty string")
     if not 0 < timeout <= 600:
@@ -355,32 +374,52 @@ def generate_netlist(
             '\nIf essential wiring is ambiguous, return only {"question":"one short question"}.'
             " Ask only when you cannot determine the intended connections."
         )
-    if correction:
-        full_text += (
-            "\n\nPREVIOUS OUTPUT WAS REJECTED. Return a corrected full netlist. "
-            "Do not claim unsupported circuit is possible. Error: " + correction[:900]
-        )
-    def request(model_id: str) -> str:
+    def request(model_id: str, request_text: str) -> str:
         options = {"timeout": timeout} if timeout != 120 else {}
         if provider == "gemini":
             if clarify:
                 options["clarify"] = True
-            return _gemini(full_text, model_id, key, **options)
+            return _gemini(request_text, model_id, key, **options)
         if provider == "anthropic":
-            return _anthropic(full_text, model_id, key, **options)
-        return _openai_compatible(full_text, provider, model_id, key, **options)
+            return _anthropic(request_text, model_id, key, **options)
+        return _openai_compatible(request_text, provider, model_id, key, **options)
 
-    try:
-        raw = request(chosen_model)
-    except ProviderRequestError as exc:
-        if allow_model_fallback and exc.status == 404 and chosen_model != settings["model"]:
-            chosen_model = settings["model"]
-            raw = request(chosen_model)
-        elif retry_transient and exc.transient:
-            raw = request(chosen_model)
-        else:
+    repair_feedback = correction.strip()
+    last_netlist = None
+    for repair_attempt in range(MAX_NETLIST_REPAIR_ATTEMPTS + 1):
+        request_text = full_text
+        if repair_feedback:
+            request_text += (
+                "\n\nPREVIOUS OUTPUT WAS REJECTED. Return a corrected full netlist and "
+                "preserve all intended components and connections. Do not claim unsupported "
+                "circuit is possible. Exact validation error: " + repair_feedback[:1200]
+            )
+        try:
+            try:
+                raw = request(chosen_model, request_text)
+            except ProviderRequestError as exc:
+                if allow_model_fallback and exc.status == 404 and chosen_model != settings["model"]:
+                    chosen_model = settings["model"]
+                    raw = request(chosen_model, request_text)
+                elif retry_transient and exc.transient:
+                    raw = request(chosen_model, request_text)
+                else:
+                    raise
+            netlist = _parse_netlist(raw, provider, clarify=clarify)
+            last_netlist = netlist
+            validate_model(netlist)
+        except (ClarificationRequired, ProviderRequestError):
             raise
-    netlist = _parse_netlist(raw, provider, clarify=clarify)
-    if on_model is not None:
-        on_model(chosen_model)
-    return netlist
+        except CircuitError as exc:
+            if repair_attempt >= MAX_NETLIST_REPAIR_ATTEMPTS:
+                message = (f"{provider} returned an invalid netlist after "
+                           f"{MAX_NETLIST_REPAIR_ATTEMPTS} correction attempts: {exc}")
+                if last_netlist is not None:
+                    raise NetlistGenerationError(message, last_netlist) from exc
+                raise CircuitError(message) from exc
+            repair_feedback = str(exc)
+            continue
+        if on_model is not None:
+            on_model(chosen_model)
+        return netlist
+    raise AssertionError("unreachable")

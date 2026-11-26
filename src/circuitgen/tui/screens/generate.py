@@ -14,7 +14,8 @@ from textual.screen import ModalScreen, Screen
 from textual.widgets import Header, Static
 from textual.worker import Worker, get_current_worker
 
-from circuitgen.ai import ClarificationRequired, PROVIDER_DISPLAY_NAMES, ProviderRequestError, generate_netlist
+from circuitgen.ai import (ClarificationRequired, NetlistGenerationError,
+                           PROVIDER_DISPLAY_NAMES, ProviderRequestError, generate_netlist)
 from circuitgen.api import from_netlist
 from circuitgen.engine import CircuitError
 from ..services.config import AppConfig, ConfigService
@@ -22,7 +23,8 @@ from ..services.credentials import CredentialService
 from ..services.models import ModelService, ProviderError
 from ..services.background import run_background_stage as run_generation_stage
 from ..widgets import EnhancedInput, JsonEditor, MenuItem, PathPickerModal, SelectableMenu
-from .render import RenderSuccessScreen, confirm_output, schematic_path, write_outputs
+from .render import (RenderSuccessScreen, ViewNetlistScreen, confirm_output,
+                     schematic_path, write_outputs)
 from .settings import ProviderSettings
 
 
@@ -137,6 +139,17 @@ class GenerateScreen(Screen[None]):
         if self.progress is not None:
             self.progress.update_stage(completed, text)
 
+    def _show_netlist_failure(self, netlist: dict, message: str) -> None:
+        self._close_progress()
+        self._set_busy(False)
+        self.set_status(message)
+        self.app.push_screen(ViewNetlistScreen(
+            netlist,
+            source_file="Render failed",
+            notice=message,
+            back_label="Back to Generate",
+        ))
+
     def _close_progress(self) -> None:
         if self.progress is not None and self.app.screen is self.progress:
             self.app.pop_screen()
@@ -188,6 +201,12 @@ class GenerateScreen(Screen[None]):
                 }.get(exc.status, str(exc))
                 self.set_status(message)
                 return
+            except NetlistGenerationError as exc:
+                self._show_netlist_failure(
+                    exc.netlist,
+                    f"The provider returned an invalid netlist after correction attempts: {exc}",
+                )
+                return
             except CircuitError:
                 self.set_status("The provider did not return a usable netlist. Try again or edit the description.")
                 return
@@ -204,11 +223,8 @@ class GenerateScreen(Screen[None]):
 
             try:
                 result, payload = await run_generation_stage(render_output)
-            except (CircuitError, ValueError, RuntimeError) as exc:
-                self.set_status(f"Could not render the netlist: {exc}")
-                return
-            except Exception:
-                self.set_status("Could not export the schematic. Check the output settings and try again.")
+            except Exception as exc:
+                self._show_netlist_failure(netlist, f"Could not render the netlist: {exc}")
                 return
 
             if not self.app.is_running:
@@ -220,6 +236,10 @@ class GenerateScreen(Screen[None]):
             ok, notice = write_outputs(payload, dest, result.netlist, sidecar, approved)
             if not ok:
                 self.set_status(notice)
+                return
+            self._progress(4, "Schematic saved.")
+            await asyncio.sleep(0.25)
+            if not self.app.is_running:
                 return
 
             success = RenderSuccessScreen(
@@ -257,30 +277,46 @@ class GenerationProgress(ModalScreen[None]):
     def __init__(self, dest: Path, cancel: Callable[[], None]) -> None:
         super().__init__()
         self.dest, self.cancel = dest, cancel
+        self.completed = 0
 
     def compose(self) -> ComposeResult:
-        with Container(id="home-container"):
-            with Vertical(id="home-card"):
-                yield Static("Generating schematic", classes="setup-title")
-                with Horizontal(id="generation-progress"):
-                    for index, label in enumerate(self.CHECKPOINTS):
-                        classes = "generation-checkpoint current" if index == 0 else "generation-checkpoint"
-                        yield Static(f"{index + 1} {label}", classes=classes)
-                yield Static("Step 1 of 4 · Checking models for your API key…",
-                             id="generation-stage", classes="status-message")
-                yield Static(f"Output: {self.dest}", markup=False)
-                yield SelectableMenu([MenuItem("cancel", "Cancel generation", "")])
-                yield Static("Esc Cancel  ·  Ctrl+Q Quit", classes="keys-reminder")
+        with Vertical(id="generation-card"):
+            yield Static("Generating schematic", classes="setup-title")
+            yield Static("Step 1 of 4 · Checking models for your API key…",
+                         id="generation-stage", classes="status-message")
+            with Horizontal(id="generation-progress-bar"):
+                for index in range(len(self.CHECKPOINTS)):
+                    classes = "generation-segment current" if index == 0 else "generation-segment"
+                    yield Static("", classes=classes)
+            with Horizontal(id="generation-checkpoints"):
+                for index, label in enumerate(self.CHECKPOINTS):
+                    classes = "generation-checkpoint current" if index == 0 else "generation-checkpoint"
+                    yield Static(label, classes=classes)
+            yield SelectableMenu([MenuItem("cancel", "Cancel generation", "")])
+            yield Static("Esc Cancel  ·  Ctrl+Q Quit", id="generation-shortcuts", classes="keys-reminder")
 
     def update_stage(self, completed: int, text: str) -> None:
-        for index, (block, label) in enumerate(zip(self.query(".generation-checkpoint").results(Static), self.CHECKPOINTS)):
-            block.set_class(index < completed, "complete")
-            block.set_class(index == completed, "current")
-            block.update(f"✓ {label}" if index < completed else f"{index + 1} {label}")
-        self.query_one("#generation-stage", Static).update(f"Step {completed + 1} of 4 · {text}")
+        completed = max(0, min(completed, len(self.CHECKPOINTS)))
+        self.completed = completed
+        for index, label in enumerate(self.query(".generation-checkpoint").results(Static)):
+            label.set_class(index < completed, "complete")
+            label.set_class(index == completed, "current")
+            label.update(f"✓ {self.CHECKPOINTS[index]}" if index < completed else self.CHECKPOINTS[index])
+        for index, segment in enumerate(self.query(".generation-segment").results(Static)):
+            segment.set_class(index < completed, "complete")
+            segment.set_class(index == completed, "current")
+        status = "Schematic saved." if completed == len(self.CHECKPOINTS) else text
+        step = "Complete" if completed == len(self.CHECKPOINTS) else f"Step {completed + 1} of 4"
+        self.query_one("#generation-stage", Static).update(f"{step} · {status}")
+        self.query_one(SelectableMenu).display = completed < len(self.CHECKPOINTS)
+        self.query_one("#generation-shortcuts", Static).update(
+            "Esc Cancel  ·  Ctrl+Q Quit" if completed < len(self.CHECKPOINTS) else "Ctrl+Q Quit"
+        )
 
     def on_selectable_menu_selected(self, event: SelectableMenu.Selected) -> None:
         self.action_cancel()
 
     def action_cancel(self) -> None:
+        if self.completed >= len(self.CHECKPOINTS):
+            return
         self.cancel()

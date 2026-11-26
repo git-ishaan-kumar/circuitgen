@@ -628,6 +628,31 @@ def _functional_multiblock_placement(model: CircuitModel) -> Placement | None:
     def clear(item, gap=1.35):
         return all(not overlaps(item, other, gap) for other in layout.values())
 
+    def signal_order_crossings(item, links, side):
+        axis = 1 if side in ('left', 'right') else 0
+        connections = [
+            (model.components[root].pins[hostpin],
+             host.pin_positions[hostpin][axis], item.pin_positions[pin][axis])
+            for hostpin, pin in links
+        ]
+        crossings = 0
+        for index, (net, host_pos, module_pos) in enumerate(connections):
+            for other_net, other_host_pos, other_module_pos in connections[index+1:]:
+                if net != other_net and (host_pos-other_host_pos)*(module_pos-other_module_pos) < -1e-6:
+                    crossings += 1
+            for other_cid, other_item in layout.items():
+                if other_cid == root or (other_item.x-host.x)*(item.x-host.x) <= 0:
+                    continue
+                for other_pin, other_net in model.components[other_cid].pins.items():
+                    if other_net == net or other_net not in root_nets:
+                        continue
+                    other_host_pins = root_nets[other_net]
+                    for other_host_pin in other_host_pins:
+                        if ((host_pos-host.pin_positions[other_host_pin][axis]) *
+                                (module_pos-other_item.pin_positions[other_pin][axis]) < -1e-6):
+                            crossings += 1
+        return crossings
+
     # Place every smaller multi-pin module alongside the host pins it actually
     # uses; search mirrors / 180° orientations to face connected leads inward.
     # Prevent unrelated power rails from driving the placement.
@@ -675,7 +700,9 @@ def _functional_multiblock_placement(model: CircuitModel) -> Placement | None:
                 # back of a module. Small penalty for mirror/rotation complexity.
                 facing = sum(max(0, (item.pin_positions[q][0]-item.x)*(1 if side=='right' else -1))
                              for _,q in links) if side in ('left','right') else 0
-                score = length + 3*facing + 0.25*abs(shift) + (0.5 if mirror else 0) + (0.8 if rot else 0)
+                crossing_penalty = 1000 * signal_order_crossings(item, links, side)
+                score = (length + 3*facing + crossing_penalty + 0.25*abs(shift)
+                         + (0.5 if mirror else 0) + (0.8 if rot else 0))
                 choices.append((score, cid, item))
         if not choices:
             return None
@@ -688,9 +715,18 @@ def _functional_multiblock_placement(model: CircuitModel) -> Placement | None:
                model.components[cid].kind not in SOURCE_KINDS}
     if any(len(model.symbols[cid].pins) != 2 for cid in pending):
         return None
+
+    def pending_order(cid):
+        anchors = [
+            (host.pin_positions[hostpin][1], host.pin_positions[hostpin][0], hostpin)
+            for net in model.components[cid].pins.values() if net not in supply
+            for hostpin in root_nets.get(net, ())
+        ]
+        return (0, *min(anchors), cid) if anchors else (1, 0.0, 0.0, '', cid)
+
     for _ in range(len(pending)+1):
         progress = False
-        for cid in sorted(pending):
+        for cid in sorted(pending, key=pending_order):
             links = []
             for pin, net in model.components[cid].pins.items():
                 if net in supply:
@@ -720,16 +756,19 @@ def _functional_multiblock_placement(model: CircuitModel) -> Placement | None:
                 spacing = base.half_width + test.half_width + 2.2
                 ideal_x = base.x + spacing*(1 if side == 'right' else -1)
                 ideal_y = pos[1] - test.pin_positions[attach_pin][1]
-                for offset in (0, -8, 8, -16, 16):
-                    item = _place_at(model, cid, round(ideal_x*2)/2,
-                                     round((ideal_y+offset)*2)/2, mirror=mirror)
-                    if not clear(item):
-                        continue
-                    distance = abs(pos[0]-item.pin_positions[attach_pin][0]) + \
-                               abs(pos[1]-item.pin_positions[attach_pin][1])
-                    # Assign local chains to clear lanes; avoid pushing parts
-                    # across their parent on a different side of the host.
-                    choices.append((distance+0.5*abs(offset), item.x, item.y, item))
+                host_branch = neighbor == root
+                lanes = (0, 8, 16, 24, 32) if host_branch else (0,)
+                offsets = (0, -8, 8, -16, 16, -24, 24) if host_branch else (0, -8, 8, -16, 16)
+                for lane in lanes:
+                    lane_x = ideal_x + lane*(1 if side == 'right' else -1)
+                    for offset in offsets:
+                        item = _place_at(model, cid, round(lane_x*2)/2,
+                                         round((ideal_y+offset)*2)/2, mirror=mirror)
+                        if not clear(item):
+                            continue
+                        distance = abs(pos[0]-item.pin_positions[attach_pin][0]) + \
+                                   abs(pos[1]-item.pin_positions[attach_pin][1])
+                        choices.append((distance+0.5*abs(offset), item.x, item.y, item))
             if choices:
                 layout[cid] = min(choices, key=lambda row: row[:3])[3]
                 pending.remove(cid)
@@ -737,7 +776,18 @@ def _functional_multiblock_placement(model: CircuitModel) -> Placement | None:
         if not progress:
             break
     if pending:
-        return None
+        # Power-only and independent passive parts still need a place in this
+        # layout. Keeping them on a clear outer row lets signal modules stay
+        # beside their host pins without abandoning the pin-aware arrangement.
+        cursor = min(item.x-item.half_width for item in layout.values())
+        row_bottom = max(item.y+item.half_height for item in layout.values())
+        for cid in sorted(pending):
+            item = _place_at(model, cid, 0, 0)
+            y = row_bottom + item.half_height + 3.0
+            item = _place_at(model, cid, cursor+item.half_width, y)
+            layout[cid] = item
+            cursor = item.x + item.half_width + 2.0
+        pending.clear()
 
     # Position sources near the host on the left, but away from outgoing signal
     # branches. Their shared power connections are routed or named later.
@@ -919,6 +969,24 @@ def _scale_centers(placement: Placement, factor_x: float, factor_y: float) -> Pl
     return dataclasses.replace(placement, symbols=items)
 
 
+def _reflect_centers(placement: Placement, axis: str) -> Placement:
+    """Reflect component centers while keeping each symbol's pin geometry intact."""
+    xs = [item.x for item in placement.symbols.values()]
+    ys = [item.y for item in placement.symbols.values()]
+    cx, cy = (min(xs)+max(xs))/2, (min(ys)+max(ys))/2
+    items = {}
+    for cid, item in placement.symbols.items():
+        x = 2*cx-item.x if axis == 'x' else item.x
+        y = 2*cy-item.y if axis == 'y' else item.y
+        dx, dy = x-item.x, y-item.y
+        items[cid] = dataclasses.replace(
+            item, x=x, y=y,
+            pin_positions={pin: (round(px+dx, 6), round(py+dy, 6))
+                           for pin, (px, py) in item.pin_positions.items()}
+        )
+    return dataclasses.replace(placement, symbols=items)
+
+
 def _compact_channels(placement: Placement) -> Placement:
     items = placement.symbols.copy()
     for axis, half_size in (('x', 'half_width'), ('y', 'half_height')):
@@ -1036,13 +1104,14 @@ def layout_candidates(model: CircuitModel, baseline: Placement):
     seen = {tuple((cid, p.x, p.y) for cid, p in sorted(baseline.symbols.items()))}
     compact = _compact_channels(baseline)
     alternatives = () if len(model.components) > 18 else (
-        _compact_around_primary(model, baseline),
         _relax_connections(model, baseline, 2),
+        _compact_around_primary(model, baseline),
         _scale_centers(baseline, .86, 1.0),
         _scale_centers(baseline, 1.0, .86),
         _scale_centers(baseline, .90, .90),
     )
-    for candidate in (compact, *alternatives):
+    for candidate in (compact, _reflect_centers(baseline, 'x'),
+                      _reflect_centers(baseline, 'y'), *alternatives):
         if candidate is None:
             continue
         fingerprint = tuple((cid, p.x, p.y) for cid, p in sorted(candidate.symbols.items()))

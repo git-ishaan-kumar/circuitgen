@@ -103,6 +103,36 @@ def test_generate_saves_and_opens_netlist(config, tmp_path, monkeypatch):
     assert json.loads(copy.call_args.args[0]) == mock_netlist()
 
 
+def test_generate_displays_netlist_when_render_fails(config, tmp_path):
+    async def run():
+        app = CircuitGenApp()
+        async with app.run_test(size=(80, 24)) as pilot:
+            page = await open_generate(app, pilot)
+            page.query_one("#generate-directory", EnhancedInput).value = str(tmp_path)
+            await select(app, pilot, "generate")
+            await app.workers.wait_for_complete()
+            await pilot.pause()
+            assert isinstance(app.screen, ViewNetlistScreen)
+            editor = app.screen.query_one("#netlist-viewer-editor", JsonEditor)
+            assert json.loads(editor.text) == mock_netlist()
+            assert editor.read_only
+            assert "Could not render the netlist" in str(
+                app.screen.query_one("#netlist-view-notice", Static).content
+            )
+            assert not (tmp_path / "led.svg").exists()
+            await select(app, pilot, "back")
+            assert app.screen is page
+            assert "Could not render the netlist" in str(
+                page.query_one("#generate-status", Static).content
+            )
+
+    with (
+        patch("circuitgen.tui.screens.generate.generate_netlist", side_effect=mock_netlist),
+        patch("circuitgen.tui.screens.generate.from_netlist", side_effect=RuntimeError("route failed")),
+    ):
+        asyncio.run(run())
+
+
 def test_fatal_traceback_omits_local_values():
     app = CircuitGenApp()
 
@@ -145,8 +175,10 @@ def test_cancel_delayed_generation_preserves_draft(config, tmp_path):
                 assert isinstance(app.screen, GenerationProgress)
                 checkpoint = app.screen.query_one(".generation-checkpoint.complete", Static)
                 assert str(checkpoint.content) == "✓ Check model"
-                assert checkpoint.styles.background.hex.upper() == "#4ADE80"
-                assert str(app.screen.query_one(".generation-checkpoint.current", Static).content) == "2 Get netlist"
+                assert checkpoint.styles.color.hex.upper() == "#4ADE80"
+                segment = app.screen.query_one(".generation-segment.complete", Static)
+                assert segment.styles.background.hex.upper() == "#4ADE80"
+                assert str(app.screen.query_one(".generation-checkpoint.current", Static).content) == "Get netlist"
                 assert "Waiting for the provider" in str(app.screen.query_one("#generation-stage", Static).content)
                 await pilot.press("escape")
                 assert "cancelled" in str(page.query_one("#generate-status", Static).content)

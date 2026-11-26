@@ -11,6 +11,14 @@ from .routing import make_routed_svg
 from .symbols import BUILTIN_SYMBOLS
 
 
+class NetlistRenderError(CircuitError):
+    """A netlist was generated or supplied, but CircuitGen could not render it."""
+
+    def __init__(self, message: str, netlist: dict[str, Any]):
+        super().__init__(message)
+        self.netlist = netlist
+
+
 # RESULTS
 
 @dataclasses.dataclass
@@ -76,7 +84,11 @@ def render(
     if isinstance(model, CircuitModel):
         svg = make_routed_svg(model, optimize=optimize, color=color)
     elif isinstance(model, dict):
-        svg = make_svg_from_netlist(model, optimize=optimize, color=color)
+        try:
+            svg = make_svg_from_netlist(model, optimize=optimize, color=color)
+            return encode_schematic(style.apply(svg) if style else svg, output_format)
+        except Exception as exc:
+            raise NetlistRenderError(str(exc), model) from exc
     else:
         raise TypeError(f"Expected CircuitModel or netlist dict, got {type(model).__name__}")
     return encode_schematic(style.apply(svg) if style else svg, output_format)
@@ -97,8 +109,11 @@ def from_netlist(
     output_format = normalize_format(output_format if output_format is not None else (
         suffix if suffix in OUTPUT_FORMATS else "svg"
     ))
-    model = validate_model(data)
-    svg = make_svg_from_netlist(data, optimize=optimize, color=color)
+    try:
+        model = validate_model(data)
+        svg = make_svg_from_netlist(data, optimize=optimize, color=color)
+    except Exception as exc:
+        raise NetlistRenderError(str(exc), data) from exc
     result = CircuitResult(
         svg=style.apply(svg) if style else svg, netlist=data, model=model, output_format=output_format
     )

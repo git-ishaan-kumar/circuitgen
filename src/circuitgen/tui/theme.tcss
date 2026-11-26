@@ -397,12 +397,67 @@ ConfirmSettings {
 }
 
 GenerationProgress {
-    background: $cg-background;
+    align: center middle;
+    background: $cg-background 60%;
 }
 
-#generation-progress {
-    height: 3;
+#generation-card {
+    width: 66;
+    height: 14;
+    border: solid $cg-accent;
+    background: $cg-surface;
+    padding: 1 2;
+    align: center middle;
+}
+
+#generation-stage {
     width: 100%;
+    height: 1;
+    color: $cg-muted;
+    text-align: center;
+}
+
+#generation-progress-bar {
+    width: 100%;
+    height: 1;
+    margin-top: 1;
+}
+
+.generation-segment {
+    width: 1fr;
+    height: 1;
+    background: $cg-border;
+}
+
+.generation-segment.current {
+    background: $cg-accent 45%;
+}
+
+.generation-segment.complete {
+    background: $cg-accent;
+}
+
+#generation-checkpoints {
+    width: 100%;
+    height: 2;
+}
+
+.generation-checkpoint {
+    width: 1fr;
+    height: 2;
+    color: $cg-muted;
+    text-align: center;
+    content-align: center middle;
+}
+
+.generation-checkpoint.current {
+    color: $cg-text;
+    text-style: bold;
+}
+
+.generation-checkpoint.complete {
+    color: $cg-accent;
+    text-style: bold;
 }
 
 ProcessingScreen {
@@ -432,24 +487,3 @@ ProcessingScreen {
     color: $cg-accent;
 }
 
-.generation-checkpoint {
-    width: 1fr;
-    height: 3;
-    border: solid $cg-border;
-    background: $cg-surface;
-    color: $cg-muted;
-    content-align: center middle;
-}
-
-.generation-checkpoint.current {
-    border: solid $cg-accent;
-    color: $cg-accent;
-    text-style: bold;
-}
-
-.generation-checkpoint.complete {
-    border: solid $cg-accent;
-    background: $cg-accent;
-    color: $cg-background;
-    text-style: bold;
-}

@@ -181,6 +181,27 @@ same provider's default model when a selected model returns HTTP 404. Retries
 and fallback are opt-in in the Python API. With `clarify=True`, a provider
 request for essential wiring information raises `ClarificationRequired`.
 
+If the AI returns a netlist that stays invalid after correction attempts,
+`generate_netlist()` raises `NetlistGenerationError`. If a generated or supplied
+netlist cannot be rendered, `generate()`, `from_netlist()`, and `render()` raise
+`NetlistRenderError`. Both are `CircuitError` subclasses and expose the netlist
+in their `.netlist` attribute, so you can save or share the exact data that
+caused a validation or routing error. `render()` attaches it when given a
+netlist dictionary:
+
+```python
+import json
+from circuitgen import NetlistRenderError, generate
+
+try:
+    generate("Create an Arduino sensor circuit")
+except NetlistRenderError as error:
+    print(json.dumps(error.netlist, indent=2))
+```
+
+In the CLI, a rendering failure opens the generated JSON in CircuitGen's netlist
+viewer, where you can inspect or copy it without creating an extra file.
+
 ### 3. Validation
 
 Check if a netlist is valid without rendering:

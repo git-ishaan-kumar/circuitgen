@@ -79,7 +79,7 @@ def test_generation_preferences_reach_library():
 
 
 def test_generation_retry_fallback_and_clarification():
-    recovered = '{"components":[],"nets":[]}'
+    recovered = '{"components":[{"id":"R1","type":"resistor","value":"1k"}],"nets":[{"name":"N1","pins":["R1.a"]}]}'
     with patch("circuitgen.ai._gemini", side_effect=[
         ProviderRequestError("Unavailable", status=503, transient=True), recovered,
     ]) as request:

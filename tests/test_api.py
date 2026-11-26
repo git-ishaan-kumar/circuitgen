@@ -140,6 +140,16 @@ class TestPublicAPI(unittest.TestCase):
         with self.assertRaises(CircuitError):
             from_netlist(INVALID_NETLIST)
 
+    @patch("circuitgen.api.make_svg_from_netlist", side_effect=CircuitError("No collision-free route"))
+    def test_from_netlist_render_error_keeps_input_netlist(self, _render):
+        from circuitgen import NetlistRenderError
+
+        with self.assertRaises(NetlistRenderError) as caught:
+            from_netlist(SAMPLE_NETLIST, output=None)
+
+        self.assertEqual(caught.exception.netlist, SAMPLE_NETLIST)
+        self.assertIn("No collision-free route", str(caught.exception))
+
     def test_render_with_model(self):
         check = validate(SAMPLE_NETLIST)
         self.assertTrue(check.valid)
