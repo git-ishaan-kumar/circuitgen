@@ -12,7 +12,7 @@ from circuitgen.tui.screens.color_picker import ColorPicker
 from circuitgen.tui.screens.confirm_dialog import QuitModal
 from circuitgen.tui.screens.home import HomeScreen
 from circuitgen.tui.screens.generate import GenerateScreen
-from circuitgen.tui.screens.placeholder import PlaceholderScreen
+from circuitgen.tui.screens.help import HelpScreen
 from circuitgen.tui.screens.settings import SettingsScreen
 from circuitgen.tui.services.config import AppConfig, ConfigService
 from circuitgen.tui.services.credentials import CredentialService
@@ -211,7 +211,7 @@ def test_quit_modal_keep_working_selection():
         async with app.run_test(size=(100, 30)) as pilot:
             await pilot.press("up", "enter")
             await pilot.pause()
-            assert isinstance(app.screen, PlaceholderScreen)
+            assert isinstance(app.screen, HelpScreen)
 
             await pilot.press("q")
             await pilot.pause()
@@ -225,7 +225,7 @@ def test_quit_modal_keep_working_selection():
             # Press Enter on Keep Working -> dismiss modal, remain in subpage
             await pilot.press("enter")
             await pilot.pause()
-            assert isinstance(app.screen, PlaceholderScreen)
+            assert isinstance(app.screen, HelpScreen)
             assert app.is_running
 
     asyncio.run(_run())

@@ -9,7 +9,6 @@ from textual.widgets import Footer, Header, Static
 
 from circuitgen import __version__
 from ..widgets.selectable_menu import MenuItem, SelectableMenu
-from .placeholder import PlaceholderScreen
 from .render import RenderModeScreen
 from .validate import ValidateModeScreen
 
@@ -111,18 +110,12 @@ class HomeScreen(Screen[None]):
             from .settings import SettingsScreen
             self.app.push_screen(SettingsScreen())
             return
-
-        page_titles = {
-            "render": ("Render", "Render a JSON netlist as a schematic"),
-            "validate": ("Validate", "Check a JSON netlist for structural/electrical errors"),
-            "settings": ("Settings", "Configure providers, preferences, and API keys"),
-            "help": ("Help", "Guides, examples, and shortcuts"),
-        }
-        name, desc = page_titles.get(key, (message.item.label, ""))
-        self.app.push_screen(PlaceholderScreen(page_name=name, description=desc))
+        if key == "help":
+            self.action_help()
 
     def action_quit_app(self) -> None:
         self.app.exit()
 
     def action_help(self) -> None:
-        self.app.push_screen(PlaceholderScreen(page_name="Help", description="Guides, examples, and shortcuts"))
+        from .help import HelpScreen
+        self.app.push_screen(HelpScreen())

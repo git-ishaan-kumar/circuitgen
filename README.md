@@ -46,6 +46,27 @@ python -m circuitgen
 
 Both entrypoints run the exact same CLI. If your terminal cannot find the `circuitgen` command, `python -m circuitgen` always works without requiring PATH changes.
 
+### Direct commands
+
+Use these commands when you do not want to open the terminal interface:
+
+```bash
+circuitgen generate "A 9V battery connected to a red LED through a 330Ω resistor." -o led.svg
+circuitgen render circuit.json -o circuit.svg
+circuitgen validate circuit.json
+circuitgen config --show
+circuitgen help render
+```
+
+`render` and `validate` work without an AI key. Pass `--stdin` instead of a file
+to pipe in JSON, for example `cat circuit.json | circuitgen validate --stdin`.
+`generate --stdin` reads a description. Generate and Render save `circuit.<format>`
+in the current folder unless you set `-o` or `--output`; the extension can be
+`.svg`, `.png`, or `.pdf`. An existing file is kept unless you pass `--force`.
+Use `--no-color` for plain output. `circuitgen --help` lists every command.
+`config --show` prints saved preferences without API keys; `circuitgen config`
+opens Settings in an interactive terminal.
+
 ### PATH Troubleshooting
 
 If you installed via `pip install circuitgen` (or `--user`) and typing `circuitgen` produces `"command not found"` or `'circuitgen' is not recognized`:

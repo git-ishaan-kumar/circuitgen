@@ -46,9 +46,10 @@ def provider_error_message(exc: ProviderRequestError) -> str:
 class GenerateScreen(Screen[None]):
     BINDINGS = [Binding("escape", "back", "Back or cancel")]
 
-    def __init__(self, config: AppConfig | None = None) -> None:
+    def __init__(self, config: AppConfig | None = None, description: str = "") -> None:
         super().__init__()
         self.config = config or ConfigService.load()
+        self.initial_description = description
         self.generation: Worker | None = None
         self.progress: GenerationProgress | None = None
         self.clarification_answer = ""
@@ -75,6 +76,8 @@ class GenerateScreen(Screen[None]):
                 yield Static("Tab Next field  ·  Esc Back or cancel  ·  Ctrl+Q Quit", classes="keys-reminder")
 
     def on_mount(self) -> None:
+        if self.initial_description:
+            self.query_one(JsonEditor).text = self.initial_description
         self.query_one(JsonEditor).focus()
 
     def _provider_label(self) -> str:

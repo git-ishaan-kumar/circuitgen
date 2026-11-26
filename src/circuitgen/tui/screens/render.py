@@ -429,6 +429,10 @@ class RenderPasteScreen(Screen[None]):
         Binding("tab", "toggle_focus", "Toggle Focus", show=False),
     ]
 
+    def __init__(self, initial_json: str = "") -> None:
+        super().__init__()
+        self.initial_json = initial_json
+
     def compose(self) -> ComposeResult:
         config = ConfigService.load()
         default_dir = config.default_output_dir or "."
@@ -482,7 +486,10 @@ class RenderPasteScreen(Screen[None]):
                 )
 
     def on_mount(self) -> None:
-        self.query_one("#render-paste-editor", JsonEditor).focus()
+        editor = self.query_one("#render-paste-editor", JsonEditor)
+        if self.initial_json:
+            editor.text = self.initial_json
+        editor.focus()
 
     def set_status(self, msg: str) -> None:
         try:

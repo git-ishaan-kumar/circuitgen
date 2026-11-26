@@ -77,6 +77,13 @@ Footer {
     text-style: bold;
 }
 
+.help-body {
+    width: 100%;
+    height: auto;
+    margin-bottom: 1;
+    color: $cg-text;
+}
+
 /* Selectable Menu */
 SelectableMenu {
     width: 100%;

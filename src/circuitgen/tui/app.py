@@ -1,6 +1,7 @@
 """CircuitGen Textual Application Shell and Brand Palette."""
 from __future__ import annotations
 
+import os
 from typing import Any
 
 from rich.traceback import Traceback
@@ -44,10 +45,13 @@ class CircuitGenApp(App[None]):
     BINDINGS = [
         Binding("ctrl+q", "quit", "Quit", show=True, priority=True),
         Binding("q", "request_quit", "Quit", show=False),
+        Binding("question_mark", "help", "Help", show=False),
     ]
 
-    def __init__(self, **kwargs) -> None:
+    def __init__(self, start_screen: str = "home", force_no_color: bool = False, **kwargs) -> None:
         super().__init__(**kwargs)
+        self.start_screen = start_screen
+        self.force_no_color = force_no_color
         self._reduced_motion_default = self.animation_level
         self._plain_colors = False
         self._no_color_filter = NoColor()
@@ -64,7 +68,8 @@ class CircuitGenApp(App[None]):
 
     def apply_preferences(self, config: AppConfig) -> None:
         self.animation_level = "none" if config.reduced_motion else self._reduced_motion_default
-        self._plain_colors = config.terminal_colors == "none"
+        self._plain_colors = (self.force_no_color or config.terminal_colors == "none" or
+                              (config.terminal_colors == "auto" and "NO_COLOR" in os.environ))
         self.theme = config.interface_theme if config.interface_theme in PALETTES else "pcb-green"
         self.refresh()
 
@@ -114,6 +119,11 @@ class CircuitGenApp(App[None]):
     def on_mount(self) -> None:
         config = ConfigService.load()
         self.apply_preferences(config)
+        if self.start_screen == "settings":
+            from .screens.settings import SettingsScreen
+            self.push_screen(HomeScreen())
+            self.push_screen(SettingsScreen())
+            return
         if config.should_show_onboarding():
             self.push_screen(SetupWelcomeScreen())
         else:
@@ -150,3 +160,23 @@ class CircuitGenApp(App[None]):
                 self.exit()
 
         self.push_screen(QuitModal(), handle_quit)
+
+    def action_help(self) -> None:
+        from .screens.help import HelpScreen
+
+        if isinstance(self.focused, (EnhancedInput, JsonEditor)) or isinstance(self.screen, HelpScreen):
+            return
+        topic = ""
+        statuses = self.screen.query(".status-message")
+        text = " ".join(str(item.content) for item in statuses.results(Static)).lower()
+        if any(word in text for word in ("model", "quota", "rate limit", "billing")):
+            topic = "trouble:models"
+        elif any(word in text for word in ("key", "provider", "authentication")):
+            topic = "trouble:keys"
+        elif any(word in text for word in ("unsupported", "unknown component")):
+            topic = "trouble:parts"
+        elif any(word in text for word in ("netlist", "json", "pin", "wiring")):
+            topic = "trouble:json"
+        elif any(word in text for word in ("file", "folder", "directory", "output", "render")):
+            topic = "trouble:files"
+        self.push_screen(HelpScreen(topic))
