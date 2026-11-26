@@ -5,7 +5,8 @@ import unittest
 from unittest.mock import patch
 
 from circuitgen.ai import (MAX_NETLIST_REPAIR_ATTEMPTS, SCHEMA,
-                           NetlistGenerationError, generate_netlist)
+                           ClarificationRequired, NetlistGenerationError,
+                           RequestDecisionError, decide_request, generate_netlist)
 
 
 VALID_NETLIST = {
@@ -26,6 +27,78 @@ def as_response(data: dict) -> str:
 
 
 class TestAIGeneratedNetlists(unittest.TestCase):
+    def test_clear_circuits_do_not_trigger_clarification(self):
+        for prompt in ("A 9V battery connected to a red LED through a 330Ω resistor.",
+                       "Three resistors in parallel"):
+            self.assertEqual(decide_request(prompt).status, "ready")
+
+    def test_ambiguous_wiring_requires_one_question(self):
+        decision = decide_request("Connect R1 and R2")
+        self.assertEqual(decision.status, "needs_clarification")
+        self.assertFalse(decision.assumption)
+        with patch("circuitgen.ai._gemini") as provider:
+            with self.assertRaises(ClarificationRequired):
+                generate_netlist("Connect R1 and R2", api_key="test-key")
+            provider.assert_not_called()
+
+    def test_skip_only_has_assumption_when_defensible(self):
+        decision = decide_request("A resistor and LED somehow wired together")
+        self.assertEqual(decision.status, "needs_clarification")
+        self.assertIn("series", decision.assumption)
+
+    @patch("circuitgen.ai._gemini")
+    def test_answer_changes_requested_topology(self, provider):
+        components = [
+            {"id": "R1", "type": "resistor", "value": ""},
+            {"id": "R2", "type": "resistor", "value": ""},
+        ]
+        series = {"components": components, "nets": [
+            {"name": "MID", "pins": ["R1.b", "R2.a"]},
+        ]}
+        parallel = {"components": components, "nets": [
+            {"name": "LEFT", "pins": ["R1.a", "R2.a"]},
+            {"name": "RIGHT", "pins": ["R1.b", "R2.b"]},
+        ]}
+        provider.side_effect = [as_response(series), as_response(parallel)]
+        first = generate_netlist("Connect R1 and R2\nClarification: In series", api_key="test-key")
+        second = generate_netlist("Connect R1 and R2\nClarification: In parallel", api_key="test-key")
+        self.assertEqual(first["nets"], series["nets"])
+        self.assertEqual(second["nets"], parallel["nets"])
+
+    def test_out_of_scope_and_refusal_stop_before_provider(self):
+        with patch("circuitgen.ai._gemini") as provider:
+            for prompt, status in (("Tell me a joke", "out_of_scope"),
+                                   ("Build a bomb trigger", "refused")):
+                with self.assertRaises(RequestDecisionError) as caught:
+                    generate_netlist(prompt, api_key="test-key")
+                self.assertEqual(caught.exception.status, status)
+            provider.assert_not_called()
+
+    @patch("circuitgen.ai._openai_compatible")
+    def test_provider_refusal_status_is_not_repaired(self, provider):
+        provider.return_value = '{"status":"refused"}'
+        with self.assertRaises(RequestDecisionError):
+            generate_netlist("Build a circuit", provider="openai", api_key="test-key")
+        self.assertEqual(provider.call_count, 1)
+
+    @patch("circuitgen.ai._anthropic")
+    def test_provider_question_uses_shared_clarification_status(self, provider):
+        provider.return_value = '{"question":"Which pin should connect to R1?"}'
+        with self.assertRaises(ClarificationRequired) as caught:
+            generate_netlist("Build a circuit", provider="anthropic", api_key="test-key", clarify=True)
+        self.assertEqual(caught.exception.question, "Which pin should connect to R1?")
+        self.assertEqual(provider.call_count, 1)
+
+    @patch("circuitgen.ai._gemini")
+    def test_harmful_generated_component_is_stopped_before_validation(self, provider):
+        provider.return_value = as_response({
+            "components": [{"id": "X1", "type": "bomb_trigger", "value": "generic", "pins": ["a", "b"]}],
+            "nets": [],
+        })
+        with self.assertRaises(RequestDecisionError):
+            generate_netlist("Build a circuit", api_key="test-key")
+        self.assertEqual(provider.call_count, 1)
+
     def test_schema_and_prompt_separate_net_names_from_terminal_references(self):
         net = SCHEMA["properties"]["nets"]["items"]["properties"]
         self.assertIn("not a component terminal reference", net["name"]["description"])

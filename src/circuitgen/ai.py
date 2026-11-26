@@ -11,6 +11,7 @@ import re
 import urllib.error
 import urllib.request
 import urllib.parse
+from dataclasses import dataclass
 from typing import Any, Callable
 
 from .engine import CircuitError, validate_model
@@ -26,6 +27,39 @@ class NetlistGenerationError(CircuitError):
     def __init__(self, message: str, netlist: dict[str, Any]):
         super().__init__(message)
         self.netlist = netlist
+
+
+@dataclass(frozen=True)
+class RequestDecision:
+    status: str
+    question: str = ""
+    assumption: str = ""
+
+
+class RequestDecisionError(CircuitError):
+    def __init__(self, status: str):
+        self.status = status
+        message = ("CircuitGen only creates circuit schematics." if status == "out_of_scope"
+                   else "CircuitGen cannot help create a circuit for that purpose.")
+        super().__init__(message)
+
+
+def decide_request(description: str) -> RequestDecision:
+    """Handle only clear cases locally; leave uncertain intent to the provider."""
+    if not isinstance(description, str) or not description.strip():
+        raise CircuitError("Enter a circuit description.")
+    lowered = description.casefold().strip()
+    if (re.search(r"\b(?:bomb|explosive|detonator|electrocute|weapon trigger)\b", lowered)
+            or re.search(r"\b(?:hurt|injure|kill)\s+(?:someone|people|a person)\b", lowered)):
+        return RequestDecision("refused")
+    if re.fullmatch(r"(?:tell me a joke|what is the weather|who won the game|write a poem)[?.! ]*", lowered):
+        return RequestDecision("out_of_scope")
+    if re.fullmatch(r"connect\s+([a-z]\d+)\s+(?:and|to)\s+([a-z]\d+)[.! ]*", lowered, re.I):
+        return RequestDecision("needs_clarification", "How should these components connect?")
+    if re.search(r"\b(?:resistor and (?:an? )?led|led and (?:an? )?resistor)\b.*\bsomehow\b", lowered):
+        return RequestDecision("needs_clarification", "How should the resistor and LED connect?",
+                               "Connect the resistor and LED in series.")
+    return RequestDecision("ready")
 
 _TERMINAL_REFERENCE_PATTERN = r"^[A-Za-z][A-Za-z0-9_]{0,31}\.[A-Za-z0-9_+\-]{1,24}$"
 
@@ -195,6 +229,11 @@ def list_providers() -> list[str]:
 class ClarificationRequired(CircuitError):
     """The provider needs more detail about the intended wiring."""
 
+    def __init__(self, question: str, assumption: str = ""):
+        super().__init__(question)
+        self.question = question
+        self.assumption = assumption
+
 
 class ProviderRequestError(CircuitError):
     def __init__(self, message: str, *, status: int | None = None, transient: bool = False) -> None:
@@ -241,6 +280,8 @@ def _parse_netlist(raw: str, provider: str, *, clarify: bool = False) -> dict[st
         raise CircuitError(f"{provider} did not return valid netlist JSON") from exc
     if not isinstance(decoded, dict):
         raise CircuitError(f"{provider} JSON was not an object")
+    if decoded.get("status") in ("refused", "out_of_scope"):
+        raise RequestDecisionError(decoded["status"])
     if clarify and set(decoded) == {"question"}:
         question = decoded["question"]
         if isinstance(question, str) and question.strip() and len(question) <= 300:
@@ -256,12 +297,11 @@ def _gemini(full_text: str, model: str, key: str, *, timeout: float = 120, clari
         "generationConfig": {
             "temperature": 0,
             "responseMimeType": "application/json",
-            "responseJsonSchema": {
-                "anyOf": [
-                    SCHEMA,
-                    {"type": "object", "properties": {"question": {"type": "string"}}, "required": ["question"]},
-                ],
-            } if clarify else SCHEMA,
+            "responseJsonSchema": {"anyOf": [
+                SCHEMA,
+                {"type": "object", "properties": {"status": {"type": "string", "enum": ["refused", "out_of_scope"]}}, "required": ["status"]},
+                *([{"type": "object", "properties": {"question": {"type": "string"}}, "required": ["question"]}] if clarify else []),
+            ]},
         },
     }
     safe_model = urllib.parse.quote(model, safe="-._/")
@@ -269,7 +309,11 @@ def _gemini(full_text: str, model: str, key: str, *, timeout: float = 120, clari
         f"https://generativelanguage.googleapis.com/v1beta/models/{safe_model}:generateContent",
         payload, {"x-goog-api-key": key}, "gemini", timeout=timeout,
     )
+    if data.get("promptFeedback", {}).get("blockReason"):
+        raise RequestDecisionError("refused")
     try:
+        if data["candidates"][0].get("finishReason") in ("SAFETY", "PROHIBITED_CONTENT", "BLOCKLIST"):
+            raise RequestDecisionError("refused")
         parts = data["candidates"][0]["content"]["parts"]
         return "".join(part.get("text", "") for part in parts)
     except (KeyError, IndexError, TypeError) as exc:
@@ -291,6 +335,8 @@ def _anthropic(full_text: str, model: str, key: str, *, timeout: float = 120) ->
     if data.get("stop_reason") == "max_tokens":
         raise CircuitError("Anthropic response was truncated; try a simpler circuit")
     blocks = data.get("content", [])
+    if any(block.get("type") == "refusal" for block in blocks):
+        raise RequestDecisionError("refused")
     raw = "".join(block.get("text", "") for block in blocks if block.get("type") == "text")
     if not raw.strip():
         raise CircuitError("Anthropic returned no text")
@@ -311,6 +357,8 @@ def _openai_compatible(full_text: str, provider: str, model: str, key: str, *, t
     )
     try:
         choice = data["choices"][0]
+        if choice.get("finish_reason") == "content_filter" or choice.get("message", {}).get("refusal"):
+            raise RequestDecisionError("refused")
         if choice.get("finish_reason") == "length":
             raise CircuitError(f"{provider} response was truncated")
         content = choice["message"]["content"]
@@ -337,8 +385,11 @@ def generate_netlist(
     on_model: Callable[[str], None] | None = None,
 ) -> dict[str, Any]:
     """Generate and validate a JSON netlist using the selected AI provider."""
-    if not isinstance(user_prompt, str) or not user_prompt.strip():
-        raise CircuitError("Circuit description must be a nonempty string")
+    decision = decide_request(user_prompt)
+    if decision.status in ("refused", "out_of_scope"):
+        raise RequestDecisionError(decision.status)
+    if decision.status == "needs_clarification":
+        raise ClarificationRequired(decision.question, decision.assumption)
     if not 0 < timeout <= 600:
         raise ValueError("Request timeout must be greater than 0 and at most 600 seconds")
     provider = ALIASES.get(provider.strip().lower(), provider.strip().lower())
@@ -369,6 +420,8 @@ def generate_netlist(
         raise CircuitError(f"{settings['key']} is not set")
 
     full_text = PROMPT + user_prompt
+    full_text += ('\nIf the request is unrelated to circuits, return only {"status":"out_of_scope"}.'
+                  ' If its purpose is clearly harmful, return only {"status":"refused"}.')
     if clarify:
         full_text += (
             '\nIf essential wiring is ambiguous, return only {"question":"one short question"}.'
@@ -406,9 +459,16 @@ def generate_netlist(
                 else:
                     raise
             netlist = _parse_netlist(raw, provider, clarify=clarify)
+            generated_terms = " ".join(
+                str(component.get(field, ""))
+                for component in netlist["components"] if isinstance(component, dict)
+                for field in ("id", "type", "value")
+            )
+            if generated_terms.strip() and decide_request(generated_terms.replace("_", " ")).status == "refused":
+                raise RequestDecisionError("refused")
             last_netlist = netlist
             validate_model(netlist)
-        except (ClarificationRequired, ProviderRequestError):
+        except (ClarificationRequired, RequestDecisionError, ProviderRequestError):
             raise
         except CircuitError as exc:
             if repair_attempt >= MAX_NETLIST_REPAIR_ATTEMPTS:

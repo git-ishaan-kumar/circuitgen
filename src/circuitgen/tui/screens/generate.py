@@ -11,11 +11,12 @@ from textual.app import ComposeResult
 from textual.binding import Binding
 from textual.containers import Container, Horizontal, Vertical
 from textual.screen import ModalScreen, Screen
-from textual.widgets import Header, Static
+from textual.widgets import Header, Input, Static
 from textual.worker import Worker, get_current_worker
 
 from circuitgen.ai import (ClarificationRequired, NetlistGenerationError,
-                           PROVIDER_DISPLAY_NAMES, ProviderRequestError, generate_netlist)
+                           PROVIDER_DISPLAY_NAMES, ProviderRequestError,
+                           RequestDecisionError, decide_request, generate_netlist)
 from circuitgen.api import from_netlist
 from circuitgen.engine import CircuitError
 from ..services.config import AppConfig, ConfigService
@@ -36,6 +37,10 @@ class GenerateScreen(Screen[None]):
         self.config = config or ConfigService.load()
         self.generation: Worker | None = None
         self.progress: GenerationProgress | None = None
+        self.clarification_answer = ""
+        self.clarification_source = ""
+        self.assumptions: list[str] = []
+        self.clarification_rounds = 0
 
     def compose(self) -> ComposeResult:
         yield Header(show_clock=False)
@@ -102,6 +107,21 @@ class GenerateScreen(Screen[None]):
         if not description or not filename:
             self.set_status("Enter a circuit description and filename.")
             return
+        if description != self.clarification_source:
+            self.clarification_answer = ""
+            self.assumptions = []
+            self.clarification_rounds = 0
+        decision = decide_request(description)
+        if decision.status in ("refused", "out_of_scope"):
+            self.set_status(str(RequestDecisionError(decision.status)))
+            return
+        if decision.status == "needs_clarification" and not self.clarification_answer:
+            if not self.config.essential_clarifications:
+                self.set_status("Wiring is unclear. Edit the description or enable clarifications in Settings.")
+                return
+            self.app.push_screen(ClarificationScreen(decision.question, decision.assumption),
+                                 lambda choice: self._use_clarification(description, choice))
+            return
 
         config = self.config
         key, _ = CredentialService.resolve_key(config.default_provider)
@@ -117,8 +137,24 @@ class GenerateScreen(Screen[None]):
         targets = [dest, sidecar] if sidecar else [dest]
         confirm_output(
             self, targets, config.overwrite_confirmation,
-            lambda approved: self._start(description, config, key, dest, sidecar, approved),
+            lambda approved: self._start(
+                description + (f"\nClarification: {self.clarification_answer}" if self.clarification_answer else ""),
+                config, key, dest, sidecar, approved),
         )
+
+    def _use_clarification(self, description: str, choice: tuple[str, bool] | None) -> None:
+        if choice is None:
+            return
+        answer, assumed = choice
+        if not answer:
+            self.set_status("Cannot determine the wiring without inventing it. Edit the description.")
+            return
+        self.clarification_source = description
+        self.clarification_answer = answer
+        self.clarification_rounds += 1
+        if assumed:
+            self.assumptions.append(answer)
+        self._submit()
 
     def _set_busy(self, busy: bool) -> None:
         for field in self.query("Input, TextArea"):
@@ -188,8 +224,21 @@ class GenerateScreen(Screen[None]):
                     allow_model_fallback=config.fallback_policy == "auto" and default_model in models,
                     clarify=config.essential_clarifications, on_model=report_model,
                 ))
-            except ClarificationRequired:
-                self.set_status("The provider needs more wiring details. Edit the description and try again.")
+            except ClarificationRequired as exc:
+                self._close_progress()
+                self._set_busy(False)
+                if not config.essential_clarifications:
+                    self.set_status("Wiring is unclear. Edit the description or enable clarifications in Settings.")
+                    return
+                if self.clarification_rounds >= 2:
+                    self.set_status("More wiring details are needed. Edit the description and try again.")
+                    return
+                self.app.push_screen(ClarificationScreen(exc.question, exc.assumption),
+                                     lambda choice: self._use_clarification(
+                                         self.query_one(JsonEditor).text.strip(), choice))
+                return
+            except RequestDecisionError as exc:
+                self.set_status(str(exc))
                 return
             except ProviderRequestError as exc:
                 message = {
@@ -245,6 +294,7 @@ class GenerateScreen(Screen[None]):
             success = RenderSuccessScreen(
                 dest, "", len(result.model.components), len(result.model.nets), result.netlist,
                 ai_source=(PROVIDER_DISPLAY_NAMES[config.default_provider], actual_model),
+                assumptions=tuple(self.assumptions),
                 another=lambda: self.app.switch_screen(GenerateScreen(config)),
             )
             self.set_status("")
@@ -268,6 +318,48 @@ class GenerateScreen(Screen[None]):
             self.set_status("Generation cancelled.")
         else:
             self.app.pop_screen()
+
+
+class ClarificationScreen(ModalScreen[tuple[str, bool] | None]):
+    BINDINGS = [Binding("escape", "cancel", "Edit description")]
+
+    def __init__(self, question: str, assumption: str = "") -> None:
+        super().__init__()
+        self.question = question
+        self.assumption = assumption
+
+    def compose(self) -> ComposeResult:
+        with Container(id="generation-progress-card"):
+            yield Static("More information needed", classes="setup-title")
+            yield Static(self.question, markup=False)
+            yield EnhancedInput(placeholder="Type your answer", id="clarification-answer")
+            yield SelectableMenu([
+                MenuItem("answer", "Continue with answer", ""),
+                MenuItem("skip", "Skip", ""),
+                MenuItem("edit", "Edit description", ""),
+            ])
+            yield Static("Tab Next field  ·  Esc Edit  ·  Ctrl+Q Quit", classes="keys-reminder")
+
+    def on_mount(self) -> None:
+        self.query_one("#clarification-answer", EnhancedInput).focus()
+
+    def on_selectable_menu_selected(self, event: SelectableMenu.Selected) -> None:
+        if event.item.key == "answer":
+            answer = self.query_one("#clarification-answer", EnhancedInput).value.strip()
+            if answer:
+                self.dismiss((answer, False))
+        elif event.item.key == "skip":
+            self.dismiss((self.assumption, bool(self.assumption)))
+        else:
+            self.dismiss(None)
+
+    def on_input_submitted(self, event: Input.Submitted) -> None:
+        answer = event.value.strip()
+        if answer:
+            self.dismiss((answer, False))
+
+    def action_cancel(self) -> None:
+        self.dismiss(None)
 
 
 class GenerationProgress(ModalScreen[None]):

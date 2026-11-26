@@ -596,6 +596,7 @@ class RenderSuccessScreen(Screen[None]):
         netlist: dict[str, Any],
         *,
         ai_source: tuple[str, str] | None = None,
+        assumptions: tuple[str, ...] = (),
         another: Callable[[], None] | None = None,
         **kwargs,
     ) -> None:
@@ -606,6 +607,7 @@ class RenderSuccessScreen(Screen[None]):
         self.nets_count = nets_count
         self.netlist = netlist
         self.ai_source = ai_source
+        self.assumptions = assumptions
         self.another = another
 
     def compose(self) -> ComposeResult:
@@ -641,6 +643,10 @@ class RenderSuccessScreen(Screen[None]):
                         yield Static(str(self.nets_count), classes="summary-value")
 
                 yield Static("", id="render-success-status", classes="status-message", markup=False)
+                if self.assumptions:
+                    yield Static("Assumptions used", classes="input-field-label")
+                    for assumption in self.assumptions:
+                        yield Static(f"• {assumption}", markup=False)
 
                 yield SelectableMenu(
                     [

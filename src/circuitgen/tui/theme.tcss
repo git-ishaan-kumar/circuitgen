@@ -401,6 +401,20 @@ GenerationProgress {
     background: $cg-background 60%;
 }
 
+ClarificationScreen {
+    align: center middle;
+    background: $cg-background 60%;
+}
+
+#generation-progress-card {
+    width: 66;
+    height: auto;
+    max-height: 85%;
+    border: solid $cg-accent;
+    background: $cg-surface;
+    padding: 1 2;
+}
+
 #generation-card {
     width: 66;
     height: 14;

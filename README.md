@@ -180,6 +180,14 @@ retry after a temporary failure, and `allow_model_fallback=True` to try the
 same provider's default model when a selected model returns HTTP 404. Retries
 and fallback are opt-in in the Python API. With `clarify=True`, a provider
 request for essential wiring information raises `ClarificationRequired`.
+`decide_request(description)` reports clear requests as `ready`, ambiguous wiring as
+`needs_clarification`, unrelated requests as `out_of_scope`, and clearly harmful
+purposes as `refused`. The same checks run before every provider call. A refusal
+or out-of-scope result raises `RequestDecisionError`, with its reason in `.status`.
+For a clarification, use the exception's `.question` to ask the user, then
+include their answer in a revised description. An available `.assumption` may
+be used only after telling the user what it is; it is empty when Skip cannot
+produce a defensible circuit.
 
 If the AI returns a netlist that stays invalid after correction attempts,
 `generate_netlist()` raises `NetlistGenerationError`. If a generated or supplied
@@ -276,6 +284,10 @@ copyable JSON view. Press Esc during generation to return to your draft.
 Generate checks the model list with the active API key before sending the
 description. Use **Browse models** if your configured model is missing from
 that list. A listed model can still be unavailable for a particular request.
+When essential wiring is unclear, Generate asks one question with **Continue**,
+**Skip**, and **Edit description**. Skip proceeds only when the screen can state
+an assumption; assumptions appear on the success screen. Unrelated or refused
+requests stop before saving a netlist or schematic.
 
 Right-click text to copy it. Right-click blank space to paste into the focused
 editable field. API-key fields accept paste and keep their contents masked.

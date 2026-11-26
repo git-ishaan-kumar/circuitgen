@@ -17,7 +17,8 @@ from .api import (
     validate,
 )
 from .engine import CircuitError, CircuitModel
-from .ai import ClarificationRequired, NetlistGenerationError
+from .ai import (ClarificationRequired, NetlistGenerationError,
+                 RequestDecision, RequestDecisionError, decide_request)
 from .export import SchematicStyle
 
 __all__ = [
@@ -34,5 +35,8 @@ __all__ = [
     "CircuitModel",
     "SchematicStyle",
     "ClarificationRequired",
+    "RequestDecision",
+    "RequestDecisionError",
+    "decide_request",
     "NetlistGenerationError",
 ]
