@@ -101,14 +101,14 @@ def get_candidate_script_directories() -> list[Path]:
 
 
 def find_installed_launcher(candidate_dirs: list[Path] | None = None) -> Path | None:
-    """Find the actual installed circuitgen launcher executable on disk.
+    """Find the actual installed circuit launcher executable on disk.
     
     Never guesses: only returns a Path if the executable actually exists on disk.
     """
     if candidate_dirs is None:
         candidate_dirs = get_candidate_script_directories()
 
-    exe_names = ["circuitgen.exe", "circuitgen"] if sys.platform == "win32" else ["circuitgen"]
+    exe_names = ["circuit.exe", "circuit"] if sys.platform == "win32" else ["circuit"]
 
     # Check candidates
     for directory in candidate_dirs:
@@ -118,7 +118,7 @@ def find_installed_launcher(candidate_dirs: list[Path] | None = None) -> Path | 
                 return target
 
     # Also check if already discoverable via PATH
-    which_path = shutil.which("circuitgen")
+    which_path = shutil.which("circuit")
     if which_path:
         p = Path(which_path).resolve()
         if p.is_file():
@@ -226,7 +226,7 @@ def setup_windows_path(
             "CircuitGen PATH Setup:\n"
             "Detected Windows Subsystem for Linux (WSL).\n"
             "WSL manages its own Linux environment and cannot configure native Windows PATH via this tool.\n"
-            "To make 'circuitgen' available in WSL:\n"
+            "To make 'circuit' available in WSL:\n"
             "  1. Ensure ~/.local/bin is on your Linux PATH (in ~/.bashrc or ~/.zshrc).\n"
             "  2. Or install via pipx: pipx install circuitgen && pipx ensurepath\n"
         )
@@ -251,7 +251,7 @@ def setup_windows_path(
     launcher = find_installed_launcher()
     if not launcher:
         stderr.write(
-            "Error: Could not find 'circuitgen.exe' in any candidate script directory.\n"
+            "Error: Could not find 'circuit.exe' in any candidate script directory.\n"
             "Please ensure CircuitGen is installed in the current Python environment:\n"
             "  python -m pip install -e .\n"
             "  or: python -m pip install circuitgen\n"
@@ -284,14 +284,14 @@ def setup_windows_path(
         if already_in_effective:
             stdout.write(
                 f"\n[PASS] '{launcher_dir}' is already in your persistent User PATH and active in this terminal.\n"
-                "No changes are needed. You can run 'circuitgen' directly.\n"
+                "No changes are needed. You can run 'circuit' directly.\n"
             )
             return 0
         else:
             stdout.write(
                 f"\n[PASS] '{launcher_dir}' is already configured in your persistent User PATH.\n"
                 "However, this current terminal has an older PATH copy.\n"
-                "Please close and restart your terminal (PowerShell, CMD, Git Bash, or VS Code) to use 'circuitgen'.\n"
+                "Please close and restart your terminal (PowerShell, CMD, Git Bash, or VS Code) to use 'circuit'.\n"
             )
             return 0
 
@@ -361,7 +361,7 @@ def setup_windows_path(
         f"Added: {clean_target}\n\n"
         "Important Notes:\n"
         "1. Existing terminal sessions (PowerShell, CMD, Git Bash, VS Code) will not see this change automatically.\n"
-        "   Please close and reopen your terminal window to run 'circuitgen'.\n"
+        "   Please close and reopen your terminal window to run 'circuit'.\n"
         "2. If you relocate, upgrade, or reinstall Python in the future, you may need to run this command again.\n"
     )
     return 0

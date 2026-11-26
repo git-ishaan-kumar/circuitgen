@@ -41,7 +41,7 @@ dependencies = [
 ]
 
 [project.scripts]
-circuitgen = "circuitgen.cli:main"
+circuit = "circuitgen.cli:main"
 
 [project.urls]
 Homepage = "https://github.com/git-ishaan-kumar/circuitgen"

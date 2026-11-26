@@ -4,6 +4,7 @@ from __future__ import annotations
 import subprocess
 import sys
 import unittest
+from pathlib import Path
 from unittest.mock import patch
 
 from circuitgen import __version__
@@ -104,11 +105,8 @@ class TestCLIEntrypoint(unittest.TestCase):
         self.assertEqual(res_main.stderr, res_cli.stderr)
 
     def test_console_script_entrypoint_registered(self):
-        """Verify console script entrypoint circuitgen is registered in metadata."""
-        if sys.version_info >= (3, 10):
-            from importlib.metadata import entry_points
-
-            eps = entry_points(group="console_scripts")
-            cg_eps = [ep for ep in eps if ep.name == "circuitgen"]
-            self.assertTrue(len(cg_eps) >= 1, "circuitgen console script not found in metadata")
-            self.assertEqual(cg_eps[0].value, "circuitgen.cli:main")
+        """Verify the circuit console script is declared for installation."""
+        project_file = Path(__file__).resolve().parents[1] / "pyproject.toml"
+        scripts = project_file.read_text(encoding="utf-8").split("[project.scripts]", 1)[1]
+        scripts = scripts.split("[", 1)[0]
+        self.assertIn('circuit = "circuitgen.cli:main"', scripts)

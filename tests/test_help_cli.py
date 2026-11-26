@@ -49,7 +49,7 @@ class TestDirectCommands(unittest.TestCase):
             with self.assertRaises(SystemExit) as caught:
                 main(["--version"])
         self.assertEqual(caught.exception.code, 0)
-        self.assertIn("circuitgen", output.getvalue())
+        self.assertIn("circuit", output.getvalue())
 
     def test_validate_stdin_exit_codes(self):
         output = io.StringIO()

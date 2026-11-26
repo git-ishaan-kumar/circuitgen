@@ -29,7 +29,7 @@ def build_parser() -> argparse.ArgumentParser:
     """Build the top-level CLI argument parser with subcommands."""
     version_str = get_version()
     parser = argparse.ArgumentParser(
-        prog="circuitgen",
+        prog="circuit",
         description="CircuitGen: Circuit schematics from text descriptions or netlists.",
     )
     parser.add_argument(
@@ -56,7 +56,7 @@ def build_parser() -> argparse.ArgumentParser:
     # setup-path subcommand
     setup_parser = subparsers.add_parser(
         "setup-path",
-        help="Diagnose and configure Windows persistent User PATH for circuitgen.",
+        help="Diagnose and configure Windows persistent User PATH for circuit.",
         description="Inspect and optionally add the CircuitGen launcher directory to your persistent Windows User PATH.",
     )
     setup_parser.add_argument(
@@ -127,7 +127,7 @@ def launch_tui(debug_mode: bool = False, start_screen: str = "home",
     if not is_interactive and not testing:
         sys.stderr.write(
             "Error: CircuitGen interactive TUI requires an interactive terminal.\n"
-            "Run 'circuitgen --help' for available CLI options or 'circuitgen doctor' for diagnostics.\n"
+            "Run 'circuit --help' for available CLI options or 'circuit doctor' for diagnostics.\n"
         )
         return 1
 
@@ -154,7 +154,7 @@ def launch_tui(debug_mode: bool = False, start_screen: str = "home",
     except (ImportError, ModuleNotFoundError) as exc:
         sys.stderr.write(
             f"Error: Missing required dependency ({exc}).\n"
-            "Please run 'python -m pip install circuitgen' or 'circuitgen doctor' for diagnostics.\n"
+            "Please run 'python -m pip install circuitgen' or 'circuit doctor' for diagnostics.\n"
         )
         return 1
     except Exception as exc:
@@ -162,7 +162,7 @@ def launch_tui(debug_mode: bool = False, start_screen: str = "home",
             raise
         sys.stderr.write(
             f"Error launching CircuitGen: {exc}\n"
-            "Run with --debug or run 'circuitgen doctor' for diagnostics.\n"
+            "Run with --debug or run 'circuit doctor' for diagnostics.\n"
         )
         return 1
 

@@ -73,11 +73,11 @@ class TestInstallationAndPackaging(unittest.TestCase):
                 any(n.endswith("entry_points.txt") for n in namelist),
                 "entry_points.txt missing from built wheel!",
             )
-            # Verify entry_points.txt content declares circuitgen
+            # Verify entry_points.txt content declares circuit
             for name in namelist:
                 if name.endswith("entry_points.txt"):
                     content = zf.read(name).decode("utf-8")
-                    self.assertIn("circuitgen = circuitgen.cli:main", content)
+                    self.assertIn("circuit = circuitgen.cli:main", content)
 
     def test_help_and_version_outside_repository(self):
         """Commands must run successfully from any working directory outside the repo."""
@@ -155,7 +155,7 @@ class TestPathAndEnvironmentUtilities(unittest.TestCase):
     def test_find_installed_launcher_found_in_candidate(self):
         with tempfile.TemporaryDirectory() as td:
             dummy_dir = Path(td)
-            exe_name = "circuitgen.exe" if sys.platform == "win32" else "circuitgen"
+            exe_name = "circuit.exe" if sys.platform == "win32" else "circuit"
             dummy_exe = dummy_dir / exe_name
             dummy_exe.write_text("#!/bin/sh\n")
             found = find_installed_launcher(candidate_dirs=[dummy_dir])
@@ -191,14 +191,14 @@ class TestWindowsRegistryPathSetup(unittest.TestCase):
         err = io.StringIO()
         code = setup_windows_path(yes=True, stdout=out, stderr=err)
         self.assertEqual(code, 1)
-        self.assertIn("Could not find 'circuitgen.exe'", err.getvalue())
+        self.assertIn("Could not find 'circuit.exe'", err.getvalue())
 
     @patch("circuitgen.syspath.is_windows", return_value=True)
     @patch("circuitgen.syspath.is_wsl", return_value=False)
     def test_setup_path_already_configured_and_effective(self, mock_wsl, mock_win):
         with tempfile.TemporaryDirectory() as td:
             dummy_dir = Path(td)
-            dummy_exe = dummy_dir / "circuitgen.exe"
+            dummy_exe = dummy_dir / "circuit.exe"
             dummy_exe.touch()
 
             with patch("circuitgen.syspath.find_installed_launcher", return_value=dummy_exe), \
@@ -215,7 +215,7 @@ class TestWindowsRegistryPathSetup(unittest.TestCase):
     def test_setup_path_already_configured_needs_restart(self, mock_wsl, mock_win):
         with tempfile.TemporaryDirectory() as td:
             dummy_dir = Path(td)
-            dummy_exe = dummy_dir / "circuitgen.exe"
+            dummy_exe = dummy_dir / "circuit.exe"
             dummy_exe.touch()
 
             with patch("circuitgen.syspath.find_installed_launcher", return_value=dummy_exe), \
@@ -232,7 +232,7 @@ class TestWindowsRegistryPathSetup(unittest.TestCase):
     def test_setup_path_check_only_flag(self, mock_wsl, mock_win):
         with tempfile.TemporaryDirectory() as td:
             dummy_dir = Path(td)
-            dummy_exe = dummy_dir / "circuitgen.exe"
+            dummy_exe = dummy_dir / "circuit.exe"
             dummy_exe.touch()
 
             with patch("circuitgen.syspath.find_installed_launcher", return_value=dummy_exe), \
@@ -249,7 +249,7 @@ class TestWindowsRegistryPathSetup(unittest.TestCase):
     def test_setup_path_user_cancels_prompt(self, mock_wsl, mock_win):
         with tempfile.TemporaryDirectory() as td:
             dummy_dir = Path(td)
-            dummy_exe = dummy_dir / "circuitgen.exe"
+            dummy_exe = dummy_dir / "circuit.exe"
             dummy_exe.touch()
 
             with patch("circuitgen.syspath.find_installed_launcher", return_value=dummy_exe), \
@@ -267,7 +267,7 @@ class TestWindowsRegistryPathSetup(unittest.TestCase):
     def test_setup_path_appends_and_broadcasts_successfully(self, mock_wsl, mock_win):
         with tempfile.TemporaryDirectory() as td:
             dummy_dir = Path(td)
-            dummy_exe = dummy_dir / "circuitgen.exe"
+            dummy_exe = dummy_dir / "circuit.exe"
             dummy_exe.touch()
 
             written_paths = []
@@ -295,7 +295,7 @@ class TestWindowsRegistryPathSetup(unittest.TestCase):
     def test_setup_path_registry_write_failure(self, mock_wsl, mock_win):
         with tempfile.TemporaryDirectory() as td:
             dummy_dir = Path(td)
-            dummy_exe = dummy_dir / "circuitgen.exe"
+            dummy_exe = dummy_dir / "circuit.exe"
             dummy_exe.touch()
 
             with patch("circuitgen.syspath.find_installed_launcher", return_value=dummy_exe), \

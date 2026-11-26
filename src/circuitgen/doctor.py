@@ -152,7 +152,7 @@ def check_launcher_and_path() -> tuple[CheckResult, list[CheckResult]]:
             CheckResult(
                 status="FAIL",
                 title="Console Launcher",
-                message="circuitgen executable not found on disk",
+                message="circuit executable not found on disk",
                 recommendation=(
                     "Install the console script using:\n"
                     "  python -m pip install -e .\n"
@@ -169,9 +169,9 @@ def check_launcher_and_path() -> tuple[CheckResult, list[CheckResult]]:
     )
 
     # 2. Check resolution from PATH
-    which_path = shutil.which("circuitgen")
+    which_path = shutil.which("circuit")
     if not which_path and is_windows():
-        which_path = shutil.which("circuitgen.exe")
+        which_path = shutil.which("circuit.exe")
 
     if not which_path:
         fix_cmd = "python -m circuitgen setup-path" if is_windows() else "pipx ensurepath (or add script dir to PATH)"
@@ -179,7 +179,7 @@ def check_launcher_and_path() -> tuple[CheckResult, list[CheckResult]]:
             CheckResult(
                 status="FAIL",
                 title="PATH Resolution",
-                message="'circuitgen' command is missing from PATH",
+                message="'circuit' command is missing from PATH",
                 recommendation=f"Run: {fix_cmd}",
             )
         )
@@ -195,7 +195,7 @@ def check_launcher_and_path() -> tuple[CheckResult, list[CheckResult]]:
                 status="WARNING",
                 title="PATH Resolution",
                 message=(
-                    f"'circuitgen' resolves to {resolved_path}, which does not match active "
+                    f"'circuit' resolves to {resolved_path}, which does not match active "
                     f"Python environment launcher ({launcher_file})"
                 ),
                 recommendation="Check your PATH order to ensure the intended Python environment comes first.",
@@ -206,14 +206,14 @@ def check_launcher_and_path() -> tuple[CheckResult, list[CheckResult]]:
             CheckResult(
                 status="PASS",
                 title="PATH Resolution",
-                message=f"'circuitgen' resolves correctly from PATH to {resolved_path}",
+                message=f"'circuit' resolves correctly from PATH to {resolved_path}",
             )
         )
 
     # 3. Check for multiple conflicting executables in PATH
     raw_path = os.environ.get("PATH", "")
     found_in_path: list[Path] = []
-    names = ["circuitgen.exe", "circuitgen"] if is_windows() else ["circuitgen"]
+    names = ["circuit.exe", "circuit"] if is_windows() else ["circuit"]
 
     for entry in raw_path.split(os.pathsep):
         entry_dir = Path(entry.strip())

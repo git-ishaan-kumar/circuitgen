@@ -34,17 +34,17 @@ EXAMPLES = {
 }
 
 COMMANDS = {
-    "generate": ("circuitgen generate \"A 9V battery connected to an LED through a 330Ω resistor.\" -o led.svg",
+    "generate": ("circuit generate \"A 9V battery connected to an LED through a 330Ω resistor.\" -o led.svg",
                  "Use a description and an AI provider. Set a provider and key in Settings first.\n"
                  "Options: --stdin, --provider, --model, -o/--output, --force."),
-    "render": ("circuitgen render circuit.json -o circuit.svg",
+    "render": ("circuit render circuit.json -o circuit.svg",
                "Turn a JSON netlist into SVG, PNG, or PDF. No AI key needed.\n"
                "Options: --stdin, -o/--output, --force."),
-    "validate": ("circuitgen validate circuit.json",
+    "validate": ("circuit validate circuit.json",
                  "Check a JSON netlist without making a file. No AI key needed.\nOption: --stdin."),
-    "config": ("circuitgen config --show",
-               "Show saved preferences without API keys. Run circuitgen config in a terminal to open Settings."),
-    "help": ("circuitgen help render", "Show help for a command. Use circuitgen --help for the full list."),
+    "config": ("circuit config --show",
+               "Show saved preferences without API keys. Run circuit config in a terminal to open Settings."),
+    "help": ("circuit help render", "Show help for a command. Use circuit --help for the full list."),
 }
 
 TROUBLESHOOTING = {
@@ -58,7 +58,7 @@ TROUBLESHOOTING = {
               "Use the same pin names in the nets. These are logical pins, not a verified package pinout."),
     "files": ("Files and rendering", "Check the output folder and filename. Use --force only if you want to replace a file.\n"
               "A routing error means CircuitGen could not draw every connection clearly. Inspect the netlist."),
-    "terminal": ("Installation and terminals", "Run circuitgen doctor to check the installation.\n"
+    "terminal": ("Installation and terminals", "Run circuit doctor to check the installation.\n"
                  "If the screen looks cramped, make the terminal at least 80 columns by 24 rows."),
 }
 
