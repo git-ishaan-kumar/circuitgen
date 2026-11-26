@@ -1,6 +1,7 @@
 """Reusable multiline JSON and prompt editor widget."""
 from __future__ import annotations
 
+import re
 from typing import Any
 from textual import events
 from textual.binding import Binding
@@ -25,11 +26,15 @@ class JsonEditor(TextArea):
         Binding("ctrl+v,super+v", "paste", "Paste", show=False),
     ]
 
+    _LIST_ITEM = re.compile(r"^([ \t]*)(?:(\d+)([.)])|([-*+•]))([ \t]+)(.*\S.*)$")
+    _EMPTY_LIST_ITEM = re.compile(r"^[ \t]*(?:\d+[.)]|[-*+•])[ \t]*$")
+
     def __init__(
         self,
         text: str = "",
         *,
         language: str | None = "json",
+        auto_lists: bool = False,
         theme: str = "css",
         id: str | None = None,
         classes: str | None = None,
@@ -42,6 +47,49 @@ class JsonEditor(TextArea):
             id=id,
             classes=classes,
         )
+        self.auto_lists = auto_lists
+
+    def _empty_list_item(self) -> tuple[int, str] | None:
+        if not self.auto_lists or not self.selection.is_empty:
+            return None
+        row, column = self.cursor_location
+        line = self.document.get_line(row)
+        if column == len(line) and self._EMPTY_LIST_ITEM.fullmatch(line):
+            return row, line
+        return None
+
+    async def _on_key(self, event: events.Key) -> None:
+        if event.key == "enter" and not self.read_only:
+            empty_item = self._empty_list_item()
+            if empty_item is not None:
+                row, line = empty_item
+                self._replace_via_keyboard("", (row, 0), (row, len(line)))
+                event.stop()
+                event.prevent_default()
+                return
+            if self.auto_lists and self.selection.is_empty:
+                row, column = self.cursor_location
+                line = self.document.get_line(row)
+                if column == len(line):
+                    match = self._LIST_ITEM.fullmatch(line)
+                    if match:
+                        indent, number, punctuation, bullet, spacing, _ = match.groups()
+                        marker = f"{int(number) + 1}{punctuation}" if number else bullet
+                        self._replace_via_keyboard(
+                            f"\n{indent}{marker}{spacing}", self.cursor_location, self.cursor_location
+                        )
+                        event.stop()
+                        event.prevent_default()
+                        return
+        await super()._on_key(event)
+
+    def action_delete_left(self) -> None:
+        empty_item = self._empty_list_item()
+        if empty_item is not None and not self.read_only:
+            row, line = empty_item
+            self._replace_via_keyboard("", (row, 0), (row, len(line)))
+            return
+        super().action_delete_left()
 
     def action_select_all(self) -> None:
         """Select all text in the editor."""

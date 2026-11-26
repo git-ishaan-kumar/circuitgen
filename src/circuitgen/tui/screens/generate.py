@@ -65,7 +65,7 @@ class GenerateScreen(Screen[None]):
                     yield Static("CircuitGen / Generate", classes="breadcrumb-left")
                 yield Static("─" * 62, classes="rule")
                 yield Static("Describe your circuit", classes="input-field-label")
-                yield JsonEditor(language=None, id="generate-description")
+                yield JsonEditor(language=None, auto_lists=True, id="generate-description")
                 yield Static(self._provider_label(), id="generate-provider", markup=False)
                 yield Static("Output directory", classes="input-field-label")
                 yield EnhancedInput(value=self.config.default_output_dir, id="generate-directory")
