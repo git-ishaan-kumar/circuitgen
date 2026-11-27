@@ -19,7 +19,7 @@
   <a href="LICENSE"><img alt="MIT License" src="https://img.shields.io/badge/license-MIT-green"></a>
 </p>
 
----
+
 
 ## Overview
 
@@ -33,7 +33,7 @@ CircuitGen is a Python library and CLI for generating circuit schematics from te
   </picture>
 </p>
 
----
+
 
 ## Features
 
@@ -48,7 +48,7 @@ CircuitGen is a Python library and CLI for generating circuit schematics from te
 - **Flexible Export**
   > Save schematics as SVG, PNG, or PDF with customizable appearance.
 
----
+
 
 ## Quickstart
 
@@ -65,7 +65,7 @@ pip install circuitgen
 circuit
 ```
 
----
+
 
 ## Python example
 
@@ -79,9 +79,9 @@ generate(
 )
 ```
 
-<p><sub>Requires a configured AI API key.</sub></p>
+<p><sub>Requires a configured API key.</sub></p>
 
----
+
 
 ## Command-line interface
 
@@ -89,7 +89,7 @@ generate(
   <img src="assets/cli-preview.png" alt="CircuitGen interactive command-line interface" width="680" style="border-radius:8px">
 </p>
 
----
+
 
 ## License
 
