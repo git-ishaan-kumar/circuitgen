@@ -17,15 +17,18 @@ authors = [
     {name = "Ishaan"}
 ]
 keywords = [
-    "circuit",
-    "schematic",
-    "electronics",
-    "circuit-diagram",
-    "netlist",
-    "svg",
+    "ai",
+    "automation",
+    "circuit-diagrams",
     "circuit-generator",
-    "python-library",
     "cli",
+    "electronics",
+    "netlist",
+    "schematics",
+    "svg",
+    "autorouting",
+    "tui",
+    "python-library",
 ]
 classifiers = [
     "Programming Language :: Python :: 3",
