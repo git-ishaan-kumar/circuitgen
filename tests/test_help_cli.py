@@ -7,7 +7,7 @@ from contextlib import redirect_stderr, redirect_stdout
 from unittest.mock import patch
 
 from circuitgen.cli import main
-from circuitgen import from_netlist
+from circuitgen import __version__, from_netlist
 from circuitgen.tui.app import CircuitGenApp
 from circuitgen.tui.screens.generate import GenerateScreen
 from circuitgen.tui.screens.help import EXAMPLES, HelpScreen, LED_NETLIST
@@ -49,7 +49,7 @@ class TestDirectCommands(unittest.TestCase):
             with self.assertRaises(SystemExit) as caught:
                 main(["--version"])
         self.assertEqual(caught.exception.code, 0)
-        self.assertIn("circuit", output.getvalue())
+        self.assertEqual(f"CircuitGen {__version__}\n", output.getvalue())
 
     def test_validate_stdin_exit_codes(self):
         output = io.StringIO()

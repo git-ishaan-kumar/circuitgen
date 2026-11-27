@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import asyncio
 import io
+import json
 import os
 import tempfile
 import urllib.error
@@ -117,9 +118,20 @@ class TestCredentialServiceUnit:
     def test_ai_generator_resolves_key_from_keyring_without_mutating_env(self, fake_keyring):
         CredentialService.save_key("gemini", "keyring-stored-secret")
 
+        valid_netlist = {
+            "components": [
+                {"id": "B1", "type": "battery", "value": "9V"},
+                {"id": "R1", "type": "resistor", "value": "10k"},
+            ],
+            "nets": [
+                {"name": "POS", "pins": ["B1.p", "R1.a"]},
+                {"name": "GND", "pins": ["B1.n", "R1.b"]},
+            ],
+        }
+
         with patch.dict(os.environ, {}, clear=True):
             assert "GEMINI_API_KEY" not in os.environ
-            with patch("circuitgen.ai._gemini", return_value='{"components":[],"nets":[]}') as mock_gemini:
+            with patch("circuitgen.ai._gemini", return_value=json.dumps(valid_netlist)) as mock_gemini:
                 generate_netlist("resistor R1 10k", provider="gemini")
                 mock_gemini.assert_called_once()
                 # Verify key passed to underlying provider function is the keyring key
