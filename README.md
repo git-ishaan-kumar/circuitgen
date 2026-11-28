@@ -65,6 +65,8 @@ pip install circuitgen
 circuit
 ```
 
+<p><sub>If the CLI fails to start or behaves unexpectedly, run <code>python -m circuit doctor</code> to check your setup.</sub></p>
+
 
 
 ## Python example
@@ -73,13 +75,15 @@ circuit
 from circuitgen import generate
 
 generate(
-    "A battery powering an LED through a resistor",
+    "A 9 V battery connected in series with a 470 Ω resistor and a red LED.",
     provider="gemini",
+    model="gemini-3.5-flash-lite",
     output="circuit.svg"
 )
 ```
 
 <p><sub>Requires a configured API key.</sub></p>
+<p><sub>AI output can be wrong or invalid. Choose a model suited to your task and review generated circuits.</sub></p>
 
 
 

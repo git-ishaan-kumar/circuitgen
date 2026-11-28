@@ -1,4 +1,4 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 575 340" width="575" height="340">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 575 368" width="575" height="368">
 <title>CircuitGen schematic</title>
 <desc>Automatically generated and geometrically validated two-terminal electrical schematic. Review before physical use.</desc>
 <style><![CDATA[
@@ -24,7 +24,7 @@
 <line class="symbol" x1="92" y1="138" x2="92" y2="169"/>
 <line class="symbol" x1="92" y1="199" x2="92" y2="230"/>
 <text class="label" style="text-anchor:end" x="56" y="178">B1</text>
-<text class="value" style="text-anchor:end" x="56" y="199">9V</text>
+<text class="value" style="text-anchor:end" x="56" y="199">9 V</text>
 <text class="value" x="112" y="159">+</text>
 <text class="value" x="112" y="217">−</text>
 </g>
@@ -47,7 +47,7 @@
 <line class="symbol" x1="28.06" y1="0" x2="46" y2="0"/>
 </g>
 <text class="label" x="276.0" y="60.0">R1</text>
-<text class="value" x="276.0" y="135.0">330</text>
+<text class="value" x="276.0" y="135.0">360 Ω</text>
 </g>
-<text x="287.5" y="330" text-anchor="middle" fill="#A0A0A0" font-family="Arial,Helvetica,sans-serif" font-size="15">Example schematic generated with CircuitGen</text>
-<style>.symbol,.fill{stroke:#FFFFFF}.fill{fill:#FFFFFF}.wire{stroke:#FFFFFF}.junction{fill:#FFFFFF}.name,.label,.value,.pin,.mark{fill:#FFFFFF}</style></svg>
+<text class="caption" x="287.5" y="340">Example schematic generated with CircuitGen</text>
+<style>.symbol,.fill{stroke:#FFFFFF}.fill{fill:#FFFFFF}.wire{stroke:#FFFFFF}.junction{fill:#FFFFFF}.name,.label,.value,.pin,.mark{fill:#FFFFFF}.caption{fill:#999999;font-family:Arial,Helvetica,sans-serif;font-size:15px;text-anchor:middle}</style></svg>
