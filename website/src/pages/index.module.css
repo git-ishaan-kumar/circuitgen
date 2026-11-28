@@ -1,0 +1,248 @@
+.main {
+  max-width: 1120px;
+  margin: 0 auto;
+  padding: 2rem 1.5rem 3.5rem;
+}
+
+.hero {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 1rem 0 2.5rem;
+  text-align: center;
+}
+
+.brand {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 1.1rem;
+}
+
+.logo {
+  width: 104px;
+  height: 104px;
+  object-fit: contain;
+}
+
+:global([data-theme='light']) .logo {
+  filter: invert(1);
+}
+
+.brand h1 {
+  margin: 0;
+  font-size: clamp(2.6rem, 6vw, 3.6rem);
+  font-weight: 600;
+  letter-spacing: -0.035em;
+}
+
+.tagline {
+  max-width: 42rem;
+  margin: 0.75rem auto 1.2rem;
+  color: var(--ifm-color-emphasis-700);
+  font-size: 1.1rem;
+}
+
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 0.6rem;
+}
+
+.install {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  width: min(100%, 340px);
+  margin-top: 1.2rem;
+  padding: 0.3rem 0.4rem 0.3rem 0.75rem;
+  border: 1px solid var(--ifm-color-emphasis-300);
+  border-radius: 4px;
+  background: var(--ifm-background-surface-color);
+  text-align: left;
+}
+
+.install code {
+  flex: 1;
+  overflow: auto;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--ifm-color-content);
+  white-space: nowrap;
+}
+
+.install button {
+  display: grid;
+  width: 2rem;
+  height: 2rem;
+  flex: none;
+  place-items: center;
+  padding: 0;
+  border: 0;
+  border-radius: 3px;
+  background: transparent;
+  color: var(--ifm-color-content);
+  cursor: pointer;
+  font: inherit;
+}
+
+.install button svg {
+  width: 1rem;
+  height: 1rem;
+  fill: none;
+  stroke: currentColor;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 1.4;
+}
+
+.install button:hover {
+  background: var(--ifm-color-emphasis-100);
+}
+
+.copyStatus {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+}
+
+.features {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 2rem;
+  padding: 1.5rem 0 3rem;
+}
+
+.feature {
+  text-align: center;
+}
+
+.featureIcon {
+  display: grid;
+  width: 2rem;
+  height: 2rem;
+  margin: 0 auto 0.8rem;
+  place-items: center;
+  color: var(--ifm-color-emphasis-700);
+}
+
+.featureIcon svg {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+.feature h2 {
+  margin: 0 0 0.45rem;
+  font-size: 1.05rem;
+  font-weight: 550;
+}
+
+.feature p {
+  max-width: 19rem;
+  margin: 0 auto;
+  color: var(--ifm-color-emphasis-700);
+  line-height: 1.55;
+}
+
+.example {
+  display: grid;
+  grid-template-columns: minmax(0, 0.9fr) minmax(0, 1fr);
+  align-items: center;
+  gap: 2rem;
+}
+
+.example h2 {
+  margin: 0 0 0.4rem;
+  font-size: 1.45rem;
+  font-weight: 550;
+}
+
+.example > div > p {
+  margin-bottom: 0.8rem;
+  color: var(--ifm-color-emphasis-700);
+}
+
+.example :global(.theme-code-block) {
+  margin: 0;
+  border-radius: 4px;
+}
+
+.example :global(.theme-code-block .buttonGroup button) {
+  min-width: 2rem;
+  min-height: 2rem;
+  padding: 0.4rem;
+}
+
+.example :global(.theme-code-block .buttonGroup svg) {
+  width: 1rem;
+  height: 1rem;
+}
+
+.schematic {
+  margin: 0;
+}
+
+.schematic img {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+
+.lightSchematic {
+  display: none !important;
+}
+
+:global([data-theme='light']) .darkSchematic {
+  display: none;
+}
+
+:global([data-theme='light']) .lightSchematic {
+  display: block !important;
+}
+
+@media (max-width: 760px) {
+  .main {
+    padding: 1.5rem 1rem 2.5rem;
+  }
+
+  .hero {
+    padding-top: 0.5rem;
+    padding-bottom: 1.5rem;
+  }
+
+  .logo {
+    width: 76px;
+    height: 76px;
+  }
+
+  .features {
+    gap: 1.25rem;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    padding: 1.25rem 0 2rem;
+  }
+
+  .feature:last-child {
+    grid-column: 1 / -1;
+  }
+
+  .example {
+    gap: 1rem;
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 520px) {
+  .features {
+    grid-template-columns: 1fr;
+  }
+
+  .feature:last-child {
+    grid-column: auto;
+  }
+}
