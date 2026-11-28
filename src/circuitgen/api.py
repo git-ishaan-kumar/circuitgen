@@ -5,10 +5,12 @@ from pathlib import Path
 from typing import Any
 
 from .ai import generate_netlist, list_providers
+from .erc import ERCReport, check_model
 from .engine import CircuitError, CircuitModel, make_svg_from_netlist, validate_model
 from .export import OUTPUT_FORMATS, SchematicStyle, encode_schematic, normalize_format
 from .routing import make_routed_svg
 from .symbols import BUILTIN_SYMBOLS
+from .values import normalize_netlist_values
 
 
 class NetlistRenderError(CircuitError):
@@ -28,6 +30,7 @@ class CircuitResult:
     model: CircuitModel | None = None
     output_path: str | None = None
     output_format: str = "svg"
+    electrical_report: ERCReport | None = None
 
     def encode(self, output_format: str | None = None) -> str | bytes:
         return encode_schematic(self.svg, output_format or self.output_format)
@@ -53,6 +56,7 @@ class ValidationResult:
     valid: bool
     errors: list[str] = dataclasses.field(default_factory=list)
     model: CircuitModel | None = None
+    electrical_report: ERCReport | None = None
 
 
 # DISCOVERY
@@ -66,7 +70,8 @@ def list_symbols() -> list[str]:
 def validate(data: dict[str, Any]) -> ValidationResult:
     try:
         model = validate_model(data)
-        return ValidationResult(valid=True, errors=[], model=model)
+        return ValidationResult(valid=True, errors=[], model=model,
+                                electrical_report=check_model(model))
     except (CircuitError, ValueError, TypeError, KeyError) as exc:
         return ValidationResult(valid=False, errors=[str(exc)], model=None)
 
@@ -85,7 +90,8 @@ def render(
         svg = make_routed_svg(model, optimize=optimize, color=color)
     elif isinstance(model, dict):
         try:
-            svg = make_svg_from_netlist(model, optimize=optimize, color=color)
+            normalized = normalize_netlist_values(model)
+            svg = make_svg_from_netlist(normalized, optimize=optimize, color=color)
             return encode_schematic(style.apply(svg) if style else svg, output_format)
         except Exception as exc:
             raise NetlistRenderError(str(exc), model) from exc
@@ -105,17 +111,19 @@ def from_netlist(
     style: SchematicStyle | None = None,
     output_format: str | None = None,
 ) -> CircuitResult:
+    normalized = normalize_netlist_values(data)
     suffix = Path(output).suffix.lower().lstrip(".") if output is not None else ""
     output_format = normalize_format(output_format if output_format is not None else (
         suffix if suffix in OUTPUT_FORMATS else "svg"
     ))
     try:
-        model = validate_model(data)
-        svg = make_svg_from_netlist(data, optimize=optimize, color=color)
+        model = validate_model(normalized)
+        svg = make_svg_from_netlist(normalized, optimize=optimize, color=color)
     except Exception as exc:
         raise NetlistRenderError(str(exc), data) from exc
     result = CircuitResult(
-        svg=style.apply(svg) if style else svg, netlist=data, model=model, output_format=output_format
+        svg=style.apply(svg) if style else svg, netlist=normalized, model=model,
+        output_format=output_format, electrical_report=check_model(model),
     )
     if output is not None:
         result.save(output, output_format=output_format)

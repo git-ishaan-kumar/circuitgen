@@ -11,7 +11,7 @@ from circuitgen.ai import (MAX_NETLIST_REPAIR_ATTEMPTS, SCHEMA,
 
 VALID_NETLIST = {
     "components": [
-        {"id": "V1", "type": "dc_source", "value": "5V"},
+        {"id": "V1", "type": "dc_source", "value": "5 V"},
         {"id": "U1", "type": "ne555", "value": "NE555"},
         {"id": "S1", "type": "i2c_sensor", "value": "generic", "pins": ["SDA", "VCC"]},
     ],
@@ -106,6 +106,27 @@ class TestAIGeneratedNetlists(unittest.TestCase):
         self.assertRegex("V1.p", net["pins"]["items"]["pattern"])
         self.assertNotRegex("NET_5V", net["pins"]["items"]["pattern"])
 
+    def test_shared_prompt_includes_value_calculations_and_preferred_series(self):
+        from circuitgen.ai import PROMPT
+
+        prompt = " ".join(PROMPT.split())
+        for principle in ("Ohm's law", "Kirchhoff's current and voltage laws", "voltage dividers",
+                          "RC/RL time constants", "E6, E12, E24, or E96",
+                          "next available standard value at or above", "resistance is Ω",
+                          "never an SI prefix", "470R means 470 Ω"):
+            with self.subTest(principle=principle):
+                self.assertIn(principle, prompt)
+
+    @patch("circuitgen.ai._openai_compatible")
+    def test_all_provider_paths_receive_common_electrical_instructions(self, provider):
+        provider.return_value = as_response(VALID_NETLIST)
+        result = generate_netlist("Build a timer", provider="openai", api_key="test-key")
+
+        self.assertEqual(result["components"][0]["value"], "5 V")
+        sent_text = " ".join(provider.call_args.args[0].split())
+        self.assertIn("Kirchhoff's current and voltage laws", sent_text)
+        self.assertIn("component voltage, current, power, tolerance", sent_text)
+
     @patch("circuitgen.ai._gemini")
     def test_invalid_terminals_are_repaired_with_exact_engine_error(self, mock_gemini):
         invalid = {
@@ -163,7 +184,8 @@ class TestAIGeneratedNetlists(unittest.TestCase):
             generate_netlist("Build a circuit", api_key="test-key")
 
         self.assertEqual(mock_gemini.call_count, MAX_NETLIST_REPAIR_ATTEMPTS + 1)
-        self.assertEqual(caught.exception.netlist, invalid)
+        expected = {**invalid, "components": [{**invalid["components"][0], "value": "1 kΩ"}]}
+        self.assertEqual(caught.exception.netlist, expected)
 
     @patch("circuitgen.ai._gemini")
     def test_provider_request_errors_are_not_misreported_as_netlist_errors(self, mock_gemini):

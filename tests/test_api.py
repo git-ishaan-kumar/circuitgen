@@ -18,6 +18,7 @@ from circuitgen import (
     render,
     validate,
 )
+from circuitgen.values import normalize_netlist_values
 
 
 # FIXTURES
@@ -77,12 +78,22 @@ class TestPublicAPI(unittest.TestCase):
         self.assertGreater(len(res.errors), 0)
         self.assertIsNone(res.model)
 
+    def test_validate_exposes_separate_electrical_findings(self):
+        raw = {"components": [{"id": "V1", "type": "battery", "value": "9V"}],
+               "nets": [{"name": "SHORT", "pins": ["V1.p", "V1.n"]}]}
+        result = validate(raw)
+        self.assertTrue(result.valid)
+        self.assertIsNotNone(result.electrical_report)
+        self.assertIn("SHORTED_VOLTAGE_SOURCE",
+                      {issue.code for issue in result.electrical_report.errors})
+
     def test_from_netlist_memory(self):
         res = from_netlist(SAMPLE_NETLIST, output=None)
         self.assertIsInstance(res, CircuitResult)
         self.assertIn("<svg", res.svg)
         self.assertIn("</svg>", res.svg)
-        self.assertEqual(res.netlist, SAMPLE_NETLIST)
+        self.assertEqual(res.netlist, normalize_netlist_values(SAMPLE_NETLIST))
+        self.assertEqual(SAMPLE_NETLIST["components"][0]["value"], "9V")
         self.assertIsInstance(res.model, CircuitModel)
         self.assertIsNone(res.output_path)
 
@@ -191,7 +202,7 @@ class TestPublicAPI(unittest.TestCase):
             correction="",
         )
         self.assertIsInstance(res, CircuitResult)
-        self.assertEqual(res.netlist, SAMPLE_NETLIST)
+        self.assertEqual(res.netlist, normalize_netlist_values(SAMPLE_NETLIST))
         self.assertIn("<svg", res.svg)
 
 

@@ -181,7 +181,8 @@ async def _render_and_save(screen, data, dest, sidecar, approved, source_label, 
         input_source=source_label,
         components_count=len(result.model.components),
         nets_count=len(result.model.nets),
-        netlist=data,
+        netlist=result.netlist,
+        electrical_report=result.electrical_report,
     )
     screen.app.push_screen(result_screen)
     result_screen.call_after_refresh(lambda: result_screen.set_status(" ".join(notices)))
@@ -604,6 +605,7 @@ class RenderSuccessScreen(Screen[None]):
         *,
         ai_source: tuple[str, str] | None = None,
         assumptions: tuple[str, ...] = (),
+        electrical_report=None,
         another: Callable[[], None] | None = None,
         **kwargs,
     ) -> None:
@@ -615,6 +617,7 @@ class RenderSuccessScreen(Screen[None]):
         self.netlist = netlist
         self.ai_source = ai_source
         self.assumptions = assumptions
+        self.electrical_report = electrical_report
         self.another = another
 
     def compose(self) -> ComposeResult:
@@ -650,6 +653,20 @@ class RenderSuccessScreen(Screen[None]):
                         yield Static(str(self.nets_count), classes="summary-value")
 
                 yield Static("", id="render-success-status", classes="status-message", markup=False)
+                if self.electrical_report:
+                    issues = (*self.electrical_report.errors, *self.electrical_report.warnings)
+                    if issues:
+                        yield Static(
+                            f"Electrical checks: {len(self.electrical_report.errors)} error(s), "
+                            f"{len(self.electrical_report.warnings)} warning(s).",
+                            classes="status-message", markup=False,
+                        )
+                    for issue in issues[:3]:
+                        yield Static(f"{issue.severity.title()}: {issue.message}",
+                                     classes="status-message", markup=False)
+                    if len(issues) > 3:
+                        yield Static(f"{len(issues) - 3} more electrical notes.",
+                                     classes="status-message", markup=False)
                 if self.assumptions:
                     yield Static("Assumptions used", classes="input-field-label")
                     for assumption in self.assumptions:

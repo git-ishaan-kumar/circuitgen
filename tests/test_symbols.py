@@ -126,6 +126,55 @@ class TestSymbolLibrary(unittest.TestCase):
                 ET.fromstring(markup)
                 self.assertIn(f'rotate({rotation})', markup)
 
+    def test_dc_source_polarity_marks_stay_inside_circle_at_every_rotation(self):
+        namespace = {"svg": "http://www.w3.org/2000/svg"}
+        for rotation in (0, 90, 180, 270):
+            with self.subTest(rotation=rotation):
+                root = ET.fromstring(make_symbol_svg("dc_source", rotation=rotation))
+                circle = root.find(".//svg:circle", namespace)
+                self.assertIsNotNone(circle)
+                radius = float(circle.attrib["r"])
+                marks = [element for element in root.findall(".//svg:text", namespace)
+                         if element.text in ("+", "−")]
+                self.assertEqual(len(marks), 2)
+                self.assertTrue(all(abs(float(mark.attrib["x"])) < radius
+                                    and abs(float(mark.attrib["y"])) < radius
+                                    for mark in marks))
+
+    def test_rendered_dc_source_marks_are_inside_and_battery_marks_are_unchanged(self):
+        namespace = {"svg": "http://www.w3.org/2000/svg"}
+        def source_svg(kind):
+            return make_svg_from_netlist({
+                "components": [
+                    {"id": "V1", "type": kind, "value": "9V"},
+                    {"id": "R1", "type": "resistor", "value": "1k"},
+                ],
+                "nets": [
+                    {"name": "P", "pins": ["V1.p", "R1.a"]},
+                    {"name": "N", "pins": ["V1.n", "R1.b"]},
+                ],
+            })
+
+        dc_root = ET.fromstring(source_svg("dc_source"))
+        dc_group = next(element for element in dc_root.findall(".//svg:g", namespace)
+                        if element.attrib.get("data-component") == "V1")
+        circle = dc_group.find("svg:circle", namespace)
+        marks = [element for element in dc_group.findall("svg:text", namespace)
+                 if element.text in ("+", "−")]
+        self.assertEqual(len(marks), 2)
+        for mark in marks:
+            self.assertEqual(float(mark.attrib["x"]), float(circle.attrib["cx"]))
+            self.assertLess(abs(float(mark.attrib["y"]) - float(circle.attrib["cy"])),
+                            float(circle.attrib["r"]))
+
+        battery_root = ET.fromstring(source_svg("battery"))
+        battery_group = next(element for element in battery_root.findall(".//svg:g", namespace)
+                             if element.attrib.get("data-component") == "V1")
+        self.assertIsNone(battery_group.find("svg:circle", namespace))
+        battery_marks = [element for element in battery_group.findall("svg:text", namespace)
+                         if element.text in ("+", "−")]
+        self.assertEqual(len(battery_marks), 2)
+
     def test_escaped_user_labels(self):
         markup = make_symbol_svg("resistor", cid="A&B", value='<dangerous>&"')
         ET.fromstring(markup)

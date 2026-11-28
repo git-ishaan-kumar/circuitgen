@@ -17,6 +17,9 @@ from dataclasses import dataclass
 from typing import Any, Callable
 
 from .engine import CircuitError, validate_model
+from .electrical_design import (apply_design_corrections, check_design_targets,
+                                explicit_component_values, preserve_explicit_values)
+from .values import normalize_netlist_values
 
 DEFAULT_PROVIDER = "gemini"
 DEFAULT_MODEL = "gemini-2.5-flash"
@@ -64,6 +67,7 @@ def decide_request(description: str) -> RequestDecision:
     return RequestDecision("ready")
 
 _TERMINAL_REFERENCE_PATTERN = r"^[A-Za-z][A-Za-z0-9_]{0,31}\.[A-Za-z0-9_+\-]{1,24}$"
+_NETLIST_NAME_PATTERN = r"^[A-Za-z][A-Za-z0-9_]{0,31}$"
 
 SCHEMA: dict[str, Any] = {
     "type": "object",
@@ -73,8 +77,8 @@ SCHEMA: dict[str, Any] = {
             "items": {
                 "type": "object",
                 "properties": {
-                    "id": {"type": "string"},
-                    "type": {"type": "string"},
+                    "id": {"type": "string", "pattern": _NETLIST_NAME_PATTERN},
+                    "type": {"type": "string", "pattern": _NETLIST_NAME_PATTERN},
                     "value": {"type": "string"},
                     "pins": {"type": "array", "items": {"type": "string"}},
                 },
@@ -89,6 +93,7 @@ SCHEMA: dict[str, Any] = {
                 "properties": {
                     "name": {
                         "type": "string",
+                        "pattern": _NETLIST_NAME_PATTERN,
                         "description": "A label for this net. It is not a component terminal reference.",
                     },
                     "pins": {
@@ -163,6 +168,47 @@ GENERAL NETLIST RULES:
 12. Every referenced component ID must exist in "components", and each pin
     name must exist on that component: use the registered pin names above or
     the explicit custom component "pins" list. Do not guess or omit a pin.
+13. Component IDs, component types, and net names must start with an ASCII
+    letter, contain only ASCII letters, digits, or underscores, and be at most
+    32 characters. Do not use hyphens, spaces, dots, or other punctuation.
+
+ELECTRICAL DESIGN AND VALUE RULES:
+1. Preserve the requested circuit and every explicit component value. Never
+   silently replace a requested value. If a stated value conflicts with the
+   requested operating point, retain it and do not call the design safe or
+   verified. Existing deterministic checks report conflicts they can confirm.
+2. For values that must be inferred, calculate and cross-check using the
+   applicable principles: Ohm's law (V=IR), Kirchhoff's current and voltage
+   laws, power (P=VI=I^2R=V^2/R), series and parallel relationships, voltage
+   dividers, and RC/RL time constants. Check the result against component
+   voltage, current, power, tolerance, and operating limits when those are
+   supplied or reliably known. Do not invent datasheet ratings.
+3. Choose realistic, commonly available values from a suitable preferred
+   number series (E6, E12, E24, or E96); use the series precision appropriate
+   to the design instead of listing every value. For a minimum current-limiting
+   resistance, choose the next available standard value at or above that
+   minimum. For other values, choose based on the actual design target and
+   constraints; do not always round upward.
+4. Write component units with standard symbols only: resistance is Ω
+   (capital omega), capacitance F, inductance H, voltage V, current A, power W,
+   frequency Hz, and time s. Do not spell out unit names. In resistor values,
+   R is RKM notation for ohms or a decimal marker, never an SI prefix. Examples:
+   470R means 470 Ω, 4R7 means 4.7 Ω, and 4k7 means 4.7 kΩ.
+5. Check inferred values against the stated targets before returning the
+   netlist. In particular, calculate series LED current from supply voltage,
+   an explicit or clearly stated typical LED drop, and series resistance;
+   calculate a divider output from the actual upper/lower connections as
+   Vin*Rlower/(Rupper+Rlower), including resistor loading when present.
+   For an RC filter driven from a divider, include the divider's Thevenin
+   resistance when calculating cutoff: Rseen includes the divider resistance
+   and any series resistor. Also check explicit RC/RL time-constant targets.
+   If a deterministic check reports a mismatch, correct only inferred values,
+   preserve the topology, and recalculate the connected circuit sections.
+6. When a needed requirement is missing, use a reasonable conventional
+   assumption if it still allows a useful design. If essential wiring or a
+   required design target cannot be determined, use the clarification behavior
+   requested by the caller. Do not describe an estimate as a simulation or
+   guarantee of electrical safety.
 
 EXAMPLE — Arduino Uno with custom I2C sensor:
 {
@@ -502,12 +548,15 @@ def generate_netlist(
 
     repair_feedback = correction.strip()
     last_netlist = None
+    explicit_values: dict[str, tuple[str, str]] = {}
     for repair_attempt in range(MAX_NETLIST_REPAIR_ATTEMPTS + 1):
         request_text = full_text
         if repair_feedback:
             request_text += (
                 "\n\nPREVIOUS OUTPUT WAS REJECTED. Return a corrected full netlist and "
-                "preserve all intended components and connections. Do not claim unsupported "
+                "preserve all intended components and connections. Preserve every value "
+                "explicitly stated in the original request; change only inferred values. "
+                "Do not claim unsupported "
                 "circuit is possible. Exact validation error: " + repair_feedback[:1200]
             )
         try:
@@ -522,7 +571,11 @@ def generate_netlist(
                     raw = request(chosen_model, request_text)
                 else:
                     raise
-            netlist = _parse_netlist(raw, provider, clarify=clarify)
+            netlist = normalize_netlist_values(_parse_netlist(raw, provider, clarify=clarify))
+            if last_netlist is None:
+                explicit_values = explicit_component_values(user_prompt, netlist)
+            else:
+                preserve_explicit_values(netlist, explicit_values)
             generated_terms = " ".join(
                 str(component.get(field, ""))
                 for component in netlist["components"] if isinstance(component, dict)
@@ -531,8 +584,29 @@ def generate_netlist(
             if generated_terms.strip() and decide_request(generated_terms.replace("_", " ")).status == "refused":
                 raise RequestDecisionError("refused")
             last_netlist = netlist
-            validate_model(netlist)
-        except (ClarificationRequired, RequestDecisionError, ProviderRequestError):
+            validated_model = validate_model(netlist)
+            design_mismatches = check_design_targets(user_prompt, validated_model)
+            if design_mismatches and repair_attempt >= MAX_NETLIST_REPAIR_ATTEMPTS:
+                corrected = apply_design_corrections(netlist, design_mismatches, explicit_values)
+                if corrected is not None:
+                    corrected_model = validate_model(corrected)
+                    if not check_design_targets(user_prompt, corrected_model):
+                        netlist = corrected
+                        last_netlist = netlist
+                        validated_model = corrected_model
+                        design_mismatches = ()
+            if design_mismatches:
+                fixed_values = [item for item in design_mismatches
+                                if item.explicit_conflict]
+                if fixed_values:
+                    raise NetlistGenerationError(
+                        "The requested electrical target conflicts with explicitly requested "
+                        "component values; those values were kept unchanged. "
+                        + " ".join(item.message for item in fixed_values), netlist,
+                    )
+                raise CircuitError(" ".join(item.message for item in design_mismatches))
+        except (ClarificationRequired, RequestDecisionError, ProviderRequestError,
+                NetlistGenerationError):
             raise
         except CircuitError as exc:
             if repair_attempt >= MAX_NETLIST_REPAIR_ATTEMPTS:

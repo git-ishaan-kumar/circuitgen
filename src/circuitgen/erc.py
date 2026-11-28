@@ -7,12 +7,12 @@ from __future__ import annotations
 
 import argparse
 import json
-import re
 from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any
 
 from .engine import CircuitError, CircuitModel, validate_model
+from .values import parse_quantity
 
 
 @dataclass(frozen=True)
@@ -90,13 +90,12 @@ GROUND_PINS = frozenset(("GND", "VSS", "GROUND"))
 POSITIVE_PINS = frozenset(("VCC", "VDD", "V+", "5V", "3V3", "VIN"))
 GROUND_NET_NAMES = frozenset(("GND", "GROUND", "VSS"))
 POWER_NET_NAMES = frozenset(("VCC", "VDD"))
-DC_VOLTAGE_VALUE = re.compile(r"\s*(\d+(?:\.\d+)?)\s*(?:V|VDC)\s*\Z", re.IGNORECASE)
 SEVERITY_ORDER = {"error": 0, "warning": 1, "info": 2}
 
 
 def _voltage(value: str) -> float | None:
-    match = DC_VOLTAGE_VALUE.fullmatch(value)
-    return float(match.group(1)) if match else None
+    parsed = parse_quantity(value)
+    return parsed[0] if parsed and parsed[1] == "V" else None
 
 
 def _power_role(kind: str, pin: str) -> str | None:

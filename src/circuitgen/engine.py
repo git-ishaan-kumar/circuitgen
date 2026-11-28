@@ -8,6 +8,7 @@ from typing import Any
 from xml.sax.saxutils import escape as xml_escape
 
 from .symbols import BUILTIN_SYMBOLS, SymbolSpec, get_symbol, label_width
+from .values import format_component_value
 
 # CONFIG
 
@@ -127,7 +128,7 @@ def validate_model(raw: dict[str, Any]) -> CircuitModel:
     for cid, (kind, value, pins) in definitions.items():
         mapping = {pin: pin_to_net[f"{cid}.{pin}"]
                    for pin in pins if f"{cid}.{pin}" in pin_to_net}
-        components[cid] = Component(cid, kind, value, mapping)
+        components[cid] = Component(cid, kind, format_component_value(kind, value), mapping)
     return CircuitModel(components, nets, symbols)
 
 
@@ -219,7 +220,7 @@ def validate(raw: dict[str, Any]) -> Circuit:
         if not isinstance(row, dict) or set(row) != {"id", "type", "value"}:
             raise CircuitError("Each component requires id, type, and value")
         cid, kind, value = row["id"], row["type"], row["value"]
-        if not isinstance(cid, str) or not re.fullmatch(r"[A-Za-z][A-Za-z0-9_]{0,11}", cid):
+        if not isinstance(cid, str) or not ID_PATTERN.fullmatch(cid):
             raise CircuitError(f"Invalid component ID: {cid!r}")
         if cid in definitions:
             raise CircuitError(f"Duplicate component ID: {cid}")
@@ -239,7 +240,7 @@ def validate(raw: dict[str, Any]) -> Circuit:
         if not isinstance(row, dict) or set(row) != {"name", "pins"}:
             raise CircuitError("Each net requires name and pins")
         name, pins = row["name"], row["pins"]
-        if not isinstance(name, str) or not re.fullmatch(r"[A-Za-z][A-Za-z0-9_]{0,11}", name):
+        if not isinstance(name, str) or not ID_PATTERN.fullmatch(name):
             raise CircuitError(f"Invalid net name: {name!r}")
         if name in nets:
             raise CircuitError(f"Duplicate net: {name}")
@@ -607,8 +608,12 @@ def svg(circuit: Circuit, ink: Ink) -> str:
                 out.append(f'<line class="symbol" x1="{x}" y1="{y+25}" x2="{x}" y2="{y+2*unit}"/>')
             out.append(f'<text class="label" style="text-anchor:end" x="{x-36}" y="{y-6}">{xml_text(cid)}</text>')
             out.append(f'<text class="value" style="text-anchor:end" x="{x-36}" y="{y+15}">{xml_text(c.value)}</text>')
-            out.append(f'<text class="value" x="{x+20}" y="{y-25}">+</text>')
-            out.append(f'<text class="value" x="{x+20}" y="{y+33}">−</text>')
+            if c.kind == "battery":
+                out.append(f'<text class="value" x="{x+20}" y="{y-25}">+</text>')
+                out.append(f'<text class="value" x="{x+20}" y="{y+33}">−</text>')
+            elif c.kind == "dc_source":
+                out.append(f'<text class="value" text-anchor="middle" x="{x}" y="{y-5}">+</text>')
+                out.append(f'<text class="value" text-anchor="middle" x="{x}" y="{y+16}">−</text>')
         else:
             if p.orientation == "left":
                 out.append(f'<g transform="translate({x:.1f} {y:.1f}) rotate(180)">')

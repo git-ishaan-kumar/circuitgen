@@ -309,6 +309,7 @@ class GenerateScreen(Screen[None]):
                 dest, "", len(result.model.components), len(result.model.nets), result.netlist,
                 ai_source=(PROVIDER_DISPLAY_NAMES[config.default_provider], actual_model),
                 assumptions=tuple(self.assumptions),
+                electrical_report=result.electrical_report,
                 another=lambda: self.app.switch_screen(GenerateScreen(config)),
             )
             self.set_status("")

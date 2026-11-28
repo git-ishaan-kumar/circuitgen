@@ -264,7 +264,16 @@ def _run_direct(args: argparse.Namespace, parser: argparse.ArgumentParser) -> in
             if args.command == "validate":
                 result = validate(data)
                 if result.valid:
-                    sys.stdout.write("Netlist is valid.\n")
+                    sys.stdout.write("Netlist structure is valid.\n")
+                    report = result.electrical_report
+                    if report and report.issues:
+                        sys.stdout.write(f"Electrical checks: {len(report.errors)} error(s), "
+                                         f"{len(report.warnings)} warning(s), "
+                                         f"{len(report.infos)} note(s).\n")
+                        for issue in (*report.errors, *report.warnings, *report.infos):
+                            sys.stdout.write(f"{issue.severity.title()}: {issue.message}\n")
+                        return 1 if report.errors else 0
+                    sys.stdout.write("No electrical issues found by the available checks.\n")
                     return 0
                 for error in result.errors:
                     sys.stderr.write(f"Error: {error}\n")
@@ -294,6 +303,13 @@ def _run_direct(args: argparse.Namespace, parser: argparse.ArgumentParser) -> in
         sys.stdout.write(f"Saved {destination}\n")
         if args.command == "generate" and actual_model:
             sys.stdout.write(f"Model: {actual_model[0]}\n")
+        report = result.electrical_report
+        if report and report.issues:
+            sys.stdout.write(f"Electrical checks: {len(report.errors)} error(s), "
+                             f"{len(report.warnings)} warning(s), "
+                             f"{len(report.infos)} note(s).\n")
+            for issue in (*report.errors, *report.warnings, *report.infos):
+                sys.stdout.write(f"{issue.severity.title()}: {issue.message}\n")
         return 0
     except (CircuitError, OSError, UnicodeError, ValueError) as exc:
         sys.stderr.write(f"Error: {exc}\n")
